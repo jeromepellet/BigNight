@@ -67,17 +67,21 @@ def create_pdf(df_future, df_past, city, hour):
     pdf.ln()
 
     for i in range(len(df_future)):
+        # CLEANING: Remove the frog emoji for the PDF to prevent the 'latin-1' error
+        clean_summary = str(df_future.iloc[i]['Summary']).replace("🐸", "").replace("❌", "0%")
+        
         pdf.cell(35, 10, str(df_future.iloc[i]['Date']), 1)
         pdf.cell(35, 10, str(df_future.iloc[i]['Rain 8h'].split(' ')[0]), 1)
         pdf.cell(35, 10, str(df_future.iloc[i]['Temp 8h'].split(' ')[0]), 1)
-        pdf.cell(45, 10, str(df_future.iloc[i]['Summary']), 1)
+        pdf.cell(45, 10, clean_summary, 1)
         pdf.ln()
     
     pdf.ln(10)
-    pdf.set_font("Arial", '', 8)
+    pdf.set_font("Arial", 'I', 8)
     pdf.cell(190, 10, "© n+p wildlife ecology", ln=True, align='C')
+    
+    # We use 'latin-1' but now the text is safe
     return pdf.output(dest='S').encode('latin-1')
-
 # --- DATA FETCHING ---
 url = "https://api.open-meteo.com/v1/forecast"
 params = {

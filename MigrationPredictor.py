@@ -86,4 +86,55 @@ try:
                 
                 # Rainfall 8h (Sum)
                 rain_8h = df.iloc[idx-8 : idx]['precipitation'].sum()
-                f_rain8 = 1.0 if rain_8h >= 10 else (0.1 if rain_8h == 0 else 0.1 + (rain_8h
+                f_rain8 = 1.0 if rain_8h >= 10 else (0.1 if rain_8h == 0 else 0.1 + (rain_8h/10)*0.9)
+                
+                # Rainfall 2h (Sum)
+                rain_2h = df.iloc[idx-2 : idx]['precipitation'].sum()
+                f_rain2 = 1.0 if rain_2h >= 4 else (0.1 if rain_2h == 0 else 0.1 + (rain_2h/4)*0.9)
+                
+                # Mean Temp 8h
+                temp_8h = df.iloc[idx-8 : idx]['temperature_2m'].mean()
+                f_temp8 = get_linear_score(temp_8h, 4, 8)
+                
+                # Mean Felt Temp 2h
+                felt_2h = df.iloc[idx-2 : idx]['apparent_temperature'].mean()
+                f_felt2 = get_linear_score(felt_2h, 4, 8)
+                
+                # Probability calculation (The product of all 5 factors)
+                final_prob = int((f_month * f_rain8 * f_rain2 * f_temp8 * f_felt2) * 100)
+                
+                all_results.append({
+                    "Date": row['time'],
+                    "Month (%)": f"{int(f_month*100)}%",
+                    "Rain 8h": f"{rain_8h:.1f}mm ({int(f_rain8*100)}%)",
+                    "Rain 2h": f"{rain_2h:.1f}mm ({int(f_rain2*100)}%)",
+                    "Temp 8h": f"{temp_8h:.1f}C ({int(f_temp8*100)}%)",
+                    "Felt 2h": f"{felt_2h:.1f}C ({int(f_felt2*100)}%)",
+                    "Prob": final_prob,
+                    "Summary": f"{final_prob}% {get_frog_emoji(final_prob)}"
+                })
+
+        full_df = pd.DataFrame(all_results)
+        past_df = full_df[full_df['Date'].dt.date < now.date()].copy()
+        future_df = full_df[full_df['Date'].dt.date >= now.date()].copy()
+
+        # Date formatting for clean tables
+        future_df['Date_Str'] = future_df['Date'].dt.strftime('%a, %b %d')
+        past_df['Date_Str'] = past_df['Date'].dt.strftime('%a, %b %d')
+
+        # --- MAIN DISPLAY ---
+        st.subheader(f"🔮 Forecast for {city_name} (Next 7 Days)")
+        st.table(future_df.drop(columns=['Prob', 'Date']).rename(columns={'Date_Str': 'Date'}))
+
+        st.divider()
+
+        st.subheader(f"📜 History for {city_name} (Last 14 Days)")
+        st.table(past_df.drop(columns=['Prob', 'Date']).rename(columns={'Date_Str': 'Date'}))
+        
+        # Copyright Footer
+        st.markdown("<p style='text-align: center; color: grey; margin-top: 50px;'>© n+p wildlife ecology</p>", unsafe_allow_html=True)
+
+    else:
+        st.error("Error connecting to weather API.")
+except Exception as e:
+    st.error(f"Technical Error: {e}")

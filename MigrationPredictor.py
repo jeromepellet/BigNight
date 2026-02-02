@@ -38,7 +38,7 @@ try:
             # Migration Logic
             t_score = 100 if avg_temp >= 6 else (50 if avg_temp >= 3 else 0)
             r_score = 100 if total_rain >= 1 else (50 if total_rain > 0 else 10)
-            prob = int((t_score * 0.4) + (r_score * 0.6))
+            prob = int((t_score * 0.2) + (r_score * 0.8))
             
             results.append({
                 "Date": window['time'].iloc[0].strftime('%A, %b %d'),

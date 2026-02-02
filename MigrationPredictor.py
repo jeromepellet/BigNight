@@ -2,6 +2,8 @@ import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime
+from fpdf import FPDF
+import base64
 
 # --- SETTINGS & UI ---
 st.set_page_config(page_title="Toad Predictor Pro", page_icon="🐸", layout="wide")
@@ -22,7 +24,6 @@ If any single factor is unfavorable (e.g., it's December or the temperature is b
 # --- SIDEBAR INTERFACE ---
 st.sidebar.header("Location & Timing")
 
-# Location Picker (Common Swiss Cities)
 locations = {
     "Lausanne": {"lat": 46.516, "lon": 6.632},
     "Geneva": {"lat": 46.204, "lon": 6.143},
@@ -38,15 +39,44 @@ city_name = st.sidebar.selectbox("Pick a city in Switzerland:", list(locations.k
 LAT = locations[city_name]["lat"]
 LON = locations[city_name]["lon"]
 
-# Manual Coordinates (Optional)
 with st.sidebar.expander("Or enter custom coordinates"):
     LAT = st.number_input("Latitude", value=LAT, format="%.4f")
     LON = st.number_input("Longitude", value=LON, format="%.4f")
 
-# Time of Survey
 TARGET_HOUR = st.sidebar.slider("Time of Survey (24h format):", 16, 22, 18)
 
-st.sidebar.info(f"Predicting for **{city_name}** at **{TARGET_HOUR}:00**.")
+# --- PDF GENERATION FUNCTION ---
+def create_pdf(df_future, df_past, city, hour):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(190, 10, f"Toad Migration Report: {city}", ln=True, align='C')
+    pdf.set_font("Arial", size=10)
+    pdf.cell(190, 10, f"Survey Time: {hour}:00 | Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True, align='C')
+    
+    pdf.ln(10)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(190, 10, "Upcoming Forecast (Next 7 Days)", ln=True)
+    pdf.set_font("Arial", size=9)
+    
+    # Simple Table Header
+    pdf.cell(35, 10, "Date", 1)
+    pdf.cell(35, 10, "Rain 8h", 1)
+    pdf.cell(35, 10, "Temp 8h", 1)
+    pdf.cell(45, 10, "Probability", 1)
+    pdf.ln()
+
+    for i in range(len(df_future)):
+        pdf.cell(35, 10, str(df_future.iloc[i]['Date']), 1)
+        pdf.cell(35, 10, str(df_future.iloc[i]['Rain 8h'].split(' ')[0]), 1)
+        pdf.cell(35, 10, str(df_future.iloc[i]['Temp 8h'].split(' ')[0]), 1)
+        pdf.cell(45, 10, str(df_future.iloc[i]['Summary']), 1)
+        pdf.ln()
+    
+    pdf.ln(10)
+    pdf.set_font("Arial", '', 8)
+    pdf.cell(190, 10, "© n+p wildlife ecology", ln=True, align='C')
+    return pdf.output(dest='S').encode('latin-1')
 
 # --- DATA FETCHING ---
 url = "https://api.open-meteo.com/v1/forecast"
@@ -68,7 +98,7 @@ def get_frog_emoji(prob):
     if prob >= 50: return "🐸🐸🐸"
     if prob >= 20: return "🐸🐸"
     if prob > 0: return "🐸"
-    return "❌"
+    return "X" # PDF font often struggles with emojis, using X for 0%
 
 try:
     response = requests.get(url, params=params)
@@ -87,8 +117,6 @@ try:
                 
                 row = df.iloc[idx]
                 month = row['time'].month
-                
-                # Factors
                 month_map = {1: 0.1, 2: 0.5, 3: 1.0, 4: 1.0}
                 f_month = month_map.get(month, 0.0)
                 
@@ -111,8 +139,8 @@ try:
                     "Month (%)": f"{int(f_month*100)}%",
                     "Rain 8h": f"{rain_8h:.1f}mm ({int(f_rain8*100)}%)",
                     "Rain 2h": f"{rain_2h:.1f}mm ({int(f_rain2*100)}%)",
-                    "Temp 8h": f"{temp_8h:.1f}°C ({int(f_temp8*100)}%)",
-                    "Felt 2h": f"{felt_2h:.1f}°C ({int(f_felt2*100)}%)",
+                    "Temp 8h": f"{temp_8h:.1f}C ({int(f_temp8*100)}%)",
+                    "Felt 2h": f"{felt_2h:.1f}C ({int(f_felt2*100)}%)",
                     "Prob": final_prob,
                     "Summary": f"{final_prob}% {get_frog_emoji(final_prob)}"
                 })
@@ -122,17 +150,25 @@ try:
         future_df = full_df[full_df['Date'].dt.date >= now.date()].copy()
 
         # Format for Display
-        past_df['Date'] = past_df['Date'].dt.strftime('%a, %b %d')
-        future_df['Date'] = future_df['Date'].dt.strftime('%a, %b %d')
+        past_df['Date_Str'] = past_df['Date'].dt.strftime('%a, %b %d')
+        future_df['Date_Str'] = future_df['Date'].dt.strftime('%a, %b %d')
 
         st.subheader(f"🔮 Forecast for {city_name} (Next 7 Days)")
-        st.table(future_df.drop(columns=['Prob']))
+        st.table(future_df.drop(columns=['Prob', 'Date']).rename(columns={'Date_Str': 'Date'}))
+
+        # PDF Download Button
+        pdf_data = create_pdf(future_df.rename(columns={'Date_Str': 'Date'}), past_df.rename(columns={'Date_Str': 'Date'}), city_name, TARGET_HOUR)
+        st.sidebar.download_button(label="📥 Download PDF Report", data=pdf_data, file_name=f"migration_report_{city_name}.pdf", mime="application/pdf")
 
         st.divider()
 
         st.subheader(f"📜 History for {city_name} (Last 14 Days)")
-        st.table(past_df.drop(columns=['Prob']))
+        st.table(past_df.drop(columns=['Prob', 'Date']).rename(columns={'Date_Str': 'Date'}))
         
+        # Copyright Footer
+        st.markdown("---")
+        st.markdown("<p style='text-align: center; color: grey;'>© n+p wildlife ecology</p>", unsafe_allow_html=True)
+
     else:
         st.error("Error connecting to weather API.")
 

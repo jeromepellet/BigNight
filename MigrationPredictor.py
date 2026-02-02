@@ -8,7 +8,7 @@ LAT, LON = 46.516, 6.632
 TARGET_HOUR = 18  
 
 st.set_page_config(page_title="Toad Predictor Pro", page_icon="🐸", layout="wide")
-st.title("🐸 Lausanne Toad Migration Pro: Past & Future")
+st.title("🐸 Migration Big Night Predictor")
 st.write(f"Model for the {TARGET_HOUR}:00 sunset window (14 days past + 7 days forecast).")
 
 # 1. Fetch data including 14 days of history

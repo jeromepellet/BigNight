@@ -10,16 +10,15 @@ st.set_page_config(page_title="Toad Predictor Pro", page_icon="🐸", layout="wi
 
 st.title("🐸 Swiss Toad Migration Predictor")
 
-# Explanatory Section
-st.markdown("""
-### How this model works
+# Explanatory Section - Adjusted to standard text size
+st.write("""
 This tool predicts the probability of common toad (*Bufo bufo*) migration during the evening "sunset window." 
-The model uses **high-resolution weather data from Open-Meteo**, integrating historical records and 7-day forecasts.
+The model uses high-resolution weather data from Open-Meteo, integrating historical records and 7-day forecasts.
 
 **The Math:** The final probability is the **product** of five factors: Month, 8h Rainfall, 2h Rainfall, 8h Mean Temperature, and 2h Mean Felt Temperature. 
 If any single factor is unfavorable (e.g., it's December or the temperature is below 4°C), the final probability drops toward zero.
----
 """)
+st.divider()
 
 # --- SIDEBAR INTERFACE ---
 st.sidebar.header("Location & Timing")
@@ -46,7 +45,7 @@ with st.sidebar.expander("Or enter custom coordinates"):
 TARGET_HOUR = st.sidebar.slider("Time of Survey (24h format):", 16, 22, 18)
 
 # --- PDF GENERATION FUNCTION ---
-def create_pdf(df_future, df_past, city, hour):
+def create_pdf(df_future, city, hour):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
@@ -59,30 +58,29 @@ def create_pdf(df_future, df_past, city, hour):
     pdf.cell(190, 10, "Upcoming Forecast (Next 7 Days)", ln=True)
     pdf.set_font("Arial", size=9)
     
-    # Simple Table Header
-    pdf.cell(35, 10, "Date", 1)
-    pdf.cell(35, 10, "Rain 8h", 1)
-    pdf.cell(35, 10, "Temp 8h", 1)
-    pdf.cell(45, 10, "Probability", 1)
+    # Table Header
+    pdf.cell(40, 10, "Date", 1)
+    pdf.cell(40, 10, "Rain 8h", 1)
+    pdf.cell(40, 10, "Temp 8h", 1)
+    pdf.cell(60, 10, "Probability", 1)
     pdf.ln()
 
     for i in range(len(df_future)):
-        # CLEANING: Remove the frog emoji for the PDF to prevent the 'latin-1' error
-        clean_summary = str(df_future.iloc[i]['Summary']).replace("🐸", "").replace("❌", "0%")
+        # Strip emojis for PDF compatibility
+        clean_summary = str(df_future.iloc[i]['Summary']).encode('ascii', 'ignore').decode('ascii')
         
-        pdf.cell(35, 10, str(df_future.iloc[i]['Date']), 1)
-        pdf.cell(35, 10, str(df_future.iloc[i]['Rain 8h'].split(' ')[0]), 1)
-        pdf.cell(35, 10, str(df_future.iloc[i]['Temp 8h'].split(' ')[0]), 1)
-        pdf.cell(45, 10, clean_summary, 1)
+        pdf.cell(40, 10, str(df_future.iloc[i]['Date']), 1)
+        pdf.cell(40, 10, str(df_future.iloc[i]['Rain 8h'].split(' ')[0]), 1)
+        pdf.cell(40, 10, str(df_future.iloc[i]['Temp 8h'].split(' ')[0]), 1)
+        pdf.cell(60, 10, clean_summary, 1)
         pdf.ln()
     
     pdf.ln(10)
     pdf.set_font("Arial", 'I', 8)
     pdf.cell(190, 10, "© n+p wildlife ecology", ln=True, align='C')
-    
-    # We use 'latin-1' but now the text is safe
     return pdf.output(dest='S').encode('latin-1')
-# --- DATA FETCHING ---
+
+# --- DATA FETCHING & PROCESSING ---
 url = "https://api.open-meteo.com/v1/forecast"
 params = {
     "latitude": LAT, "longitude": LON,
@@ -102,7 +100,7 @@ def get_frog_emoji(prob):
     if prob >= 50: return "🐸🐸🐸"
     if prob >= 20: return "🐸🐸"
     if prob > 0: return "🐸"
-    return "X" # PDF font often struggles with emojis, using X for 0%
+    return "❌"
 
 try:
     response = requests.get(url, params=params)
@@ -120,9 +118,8 @@ try:
                 if idx < 8: continue 
                 
                 row = df.iloc[idx]
-                month = row['time'].month
                 month_map = {1: 0.1, 2: 0.5, 3: 1.0, 4: 1.0}
-                f_month = month_map.get(month, 0.0)
+                f_month = month_map.get(row['time'].month, 0.0)
                 
                 rain_8h = df.iloc[idx-8 : idx]['precipitation'].sum()
                 f_rain8 = 1.0 if rain_8h >= 10 else (0.1 if rain_8h == 0 else 0.1 + (rain_8h/10)*0.9)
@@ -153,16 +150,19 @@ try:
         past_df = full_df[full_df['Date'].dt.date < now.date()].copy()
         future_df = full_df[full_df['Date'].dt.date >= now.date()].copy()
 
-        # Format for Display
-        past_df['Date_Str'] = past_df['Date'].dt.strftime('%a, %b %d')
         future_df['Date_Str'] = future_df['Date'].dt.strftime('%a, %b %d')
+        past_df['Date_Str'] = past_df['Date'].dt.strftime('%a, %b %d')
 
-        st.subheader(f"🔮 Forecast for {city_name} (Next 7 Days)")
+        # --- MAIN DISPLAY ---
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.subheader(f"🔮 Forecast for {city_name} (Next 7 Days)")
+        with col2:
+            # Moved PDF button to main area next to the header
+            pdf_data = create_pdf(future_df.rename(columns={'Date_Str': 'Date'}), city_name, TARGET_HOUR)
+            st.download_button(label="📥 Download PDF", data=pdf_data, file_name=f"migration_report_{city_name}.pdf", mime="application/pdf")
+
         st.table(future_df.drop(columns=['Prob', 'Date']).rename(columns={'Date_Str': 'Date'}))
-
-        # PDF Download Button
-        pdf_data = create_pdf(future_df.rename(columns={'Date_Str': 'Date'}), past_df.rename(columns={'Date_Str': 'Date'}), city_name, TARGET_HOUR)
-        st.sidebar.download_button(label="📥 Download PDF Report", data=pdf_data, file_name=f"migration_report_{city_name}.pdf", mime="application/pdf")
 
         st.divider()
 
@@ -170,11 +170,9 @@ try:
         st.table(past_df.drop(columns=['Prob', 'Date']).rename(columns={'Date_Str': 'Date'}))
         
         # Copyright Footer
-        st.markdown("---")
-        st.markdown("<p style='text-align: center; color: grey;'>© n+p wildlife ecology</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: grey; margin-top: 50px;'>© n+p wildlife ecology</p>", unsafe_allow_html=True)
 
     else:
         st.error("Error connecting to weather API.")
-
 except Exception as e:
     st.error(f"Technical Error: {e}")

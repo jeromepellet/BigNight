@@ -1,0 +1,47 @@
+import streamlit as st
+import requests
+import pandas as pd
+from datetime import datetime
+
+st.title("🐸 Lausanne Common Toad Migration Predictor")
+st.write("Predicting the 'Big Night' based on 6°C sunset thresholds and rain.")
+
+# 1. Fetch Weather Data (MeteoSwiss via Open-Meteo)
+url = "https://api.open-meteo.com/v1/meteoswiss"
+params = {
+    "latitude": 46.516, "longitude": 6.632,
+    "hourly": ["temperature_2m", "precipitation"],
+    "timezone": "Europe/Berlin", "forecast_days": 7
+}
+
+data = requests.get(url, params=params).json()
+df = pd.DataFrame(data['hourly'])
+df['time'] = pd.to_datetime(df['time'])
+
+# 2. Calculation Logic
+results = []
+for day in range(7):
+    # Evening window: 18:00 to 21:00
+    start_idx = 18 + (day * 24)
+    window = df.iloc[start_idx : start_idx + 4]
+    
+    avg_temp = window['temperature_2m'].mean()
+    total_rain = window['precipitation'].sum()
+    
+    # Scoring
+    t_score = 100 if avg_temp >= 6 else (50 if avg_temp >= 3 else 0)
+    r_score = 100 if total_rain >= 1 else (50 if total_rain > 0 else 10)
+    prob = (t_score * 0.4) + (r_score * 0.6)
+    
+    results.append({
+        "Date": window['time'].iloc[0].strftime('%A, %b %d'),
+        "Evening Temp": f"{avg_temp:.1f}°C",
+        "Rain Forecast": f"{total_rain:.1f}mm",
+        "Migration Prob": int(prob)
+    })
+
+# 3. Display as a nice Table
+res_df = pd.DataFrame(results)
+st.table(res_df.style.background_gradient(subset=['Migration Prob'], cmap='RdYlGn'))
+
+st.info("Note: Common Toads usually move when evening temps are above 5-6°C with steady rain.")

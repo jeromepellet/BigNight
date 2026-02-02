@@ -13,7 +13,7 @@ url = "https://api.open-meteo.com/v1/meteoswiss"
 params = {
     "latitude": 46.516,
     "longitude": 6.632,
-    "hourly": ["temperature_2m", "precipitation"],
+    "hourly": "temperature_2m,precipitation",  # We changed this to a single string
     "timezone": "Europe/Berlin",
     "forecast_days": 7
 }

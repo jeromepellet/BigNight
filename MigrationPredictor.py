@@ -87,8 +87,8 @@ def get_activity_icon(prob):
     else: return "🐸🐸🐸🐸🐸"
 
 # --- INTERFACE ---
-st.title("🐸 Radar des migrations d'amphibiens")
-st.caption("Modèle V5.6 | Analyse environnementale haute précision")
+st.title("🐸 Radar des migrations d'amphibiens en Suisse")
+st.caption("Modèle prédictif de l'intensité des migrations de batraciens")
 
 ville = st.selectbox("📍 Station de référence :", list(CITY_DATA.keys()))
 LAT, LON = CITY_DATA[ville]

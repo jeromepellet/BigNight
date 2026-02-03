@@ -1,96 +1,134 @@
 import streamlit as st
+import requests
 import pandas as pd
 import numpy as np
-import requests
 from datetime import datetime
-import pgeocode
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="Radar Batraciens Suisse", page_icon="🐸", layout="wide")
+# --- CONFIGURATION & INTERFACE ---
+st.set_page_config(page_title="Toad Predictor Pro", page_icon="🐸", layout="wide")
 
-# Utilisation du cache pour pgeocode (évite de télécharger la base de données à chaque clic)
-@st.cache_resource
-def get_geocoder():
-    return pgeocode.Nominatim('ch')
+st.title("🐸 Prédicteur de Migration Batraciens")
 
-nomi = get_geocoder()
+st.write("""
+**Version Alpha Stable** : Cette version utilise les coordonnées directes pour garantir une compatibilité totale.
+Le calcul est basé sur le produit de 6 facteurs (Mois, Pluie 8h/2h, Température 8h/2h et Cycle Lunaire).
+""")
+st.divider()
 
-st.title("🐸 Radar de Migration (MétéoSuisse Live)")
+# --- INTERFACE LATÉRALE ---
+st.sidebar.header("📍 Localisation & Horaire")
 
-# --- FONCTIONS ---
-def get_moon_emoji(date):
-    ref_new_moon = datetime(2025, 2, 28)
-    lunar_cycle = 29.53059
-    diff = (date - ref_new_moon).total_seconds() / (24 * 3600)
-    phase = (diff % lunar_cycle) / lunar_cycle
-    illumination = (1 - np.cos(2 * np.pi * phase)) / 2
-    
-    if phase < 0.06 or phase > 0.94: return "🌑", illumination
-    elif phase < 0.19: return "🌒", illumination
-    elif phase < 0.31: return "🌓", illumination
-    elif phase < 0.44: return "🌔", illumination
-    elif phase < 0.56: return "🌕", illumination
-    elif phase < 0.69: return "🌖", illumination
-    elif phase < 0.81: return "🌗", illumination
-    else: return "🌘", illumination
-
-@st.cache_data(ttl=600)
-def fetch_meteoswiss():
-    url = "https://data.geo.admin.ch/ch.meteoschweiz.messwerte-aktuell/ch.meteoschweiz.messwerte-aktuell_en.csv"
-    return pd.read_csv(url, sep=';', on_bad_lines='skip')
-
-# --- STATIONS ---
-STATIONS = {
-    "Lausanne": (46.51, 6.66, "PUY"), "Genève": (46.23, 6.10, "GVE"),
-    "Sion": (46.21, 7.33, "SIO"), "Neuchâtel": (46.99, 6.93, "NEU"),
-    "Fribourg": (46.77, 7.10, "FRE"), "Payerne": (46.81, 6.94, "PAY"),
-    "Aigle": (46.31, 6.92, "AIG"), "La Chaux-de-Fonds": (47.08, 6.79, "CDF"),
-    "Bâle": (47.54, 7.58, "BAS"), "Zurich": (47.37, 8.56, "SMA")
+villes = {
+    "Lausanne": {"lat": 46.516, "lon": 6.632},
+    "Genève": {"lat": 46.204, "lon": 6.143},
+    "Zurich": {"lat": 47.376, "lon": 8.541},
+    "Berne": {"lat": 46.948, "lon": 7.447},
+    "Bâle": {"lat": 47.559, "lon": 7.588},
+    "Lugano": {"lat": 46.003, "lon": 8.951},
+    "Sion": {"lat": 46.229, "lon": 7.359},
+    "Neuchâtel": {"lat": 46.990, "lon": 6.929},
+    "Yverdon": {"lat": 46.778, "lon": 6.641}
 }
 
-# --- LOGIQUE NPA ---
-npa = st.sidebar.text_input("Code Postal (NPA) :", "1000")
-res = nomi.query_postal_code(npa)
+ville_choisie = st.sidebar.selectbox("Choisissez une ville :", list(villes.keys()))
+LAT = villes[ville_choisie]["lat"]
+LON = villes[ville_choisie]["lon"]
 
-if not pd.isna(res.latitude):
-    u_lat, u_lon, u_ville = res.latitude, res.longitude, res.place_name
-else:
-    u_lat, u_lon, u_ville = 46.51, 6.63, "Lausanne (Défaut)"
+HEURE_CIBLE = st.sidebar.slider("Heure de passage (24h) :", 16, 22, 19)
 
-# Trouver station la plus proche
-sid = "PUY"
-d_min = 999
-for n, (slat, slon, s_id) in STATIONS.items():
-    d = np.sqrt((u_lat-slat)**2 + (u_lon-slon)**2)
-    if d < d_min: d_min, sid = d, s_id
+# --- FONCTIONS DE CALCUL ---
+def get_linear_score(value, min_val, max_val):
+    if value <= min_val: return 0.1
+    if value >= max_val: return 1.0
+    return 0.1 + ((value - min_val) / (max_val - min_val)) * 0.9
 
-# --- CALCULS ---
-df = fetch_meteoswiss()
-if df is not None:
-    data = df[df['Station/Location'] == sid]
-    if not data.empty:
-        r = data.iloc[0]
-        t, p, h = float(r['tre200s0']), float(r['rre150z0']), float(r['ure200s0'])
-        m_emoji, illum = get_moon_emoji(datetime.now())
+def get_moon_info(date):
+    # Référence : Nouvelle lune le 28 février 2025
+    ref_new_moon = datetime(2025, 2, 28)
+    diff = (date - ref_new_moon).total_seconds() / (24 * 3600)
+    phase = (diff % 29.53) / 29.53
+    illumination = (1 - np.cos(2 * np.pi * phase)) / 2
+    
+    if phase < 0.06 or phase > 0.94: emoji = "🌑" 
+    elif phase < 0.19: emoji = "🌒"
+    elif phase < 0.31: emoji = "🌓" 
+    elif phase < 0.44: emoji = "🌔"
+    elif phase < 0.56: emoji = "🌕" 
+    elif phase < 0.69: emoji = "🌖"
+    elif phase < 0.81: emoji = "🌗" 
+    else: emoji = "🌘"
+    return illumination, emoji
+
+def get_frog_emoji(prob):
+    if prob >= 80: return "🐸🐸🐸🐸"
+    if prob >= 50: return "🐸🐸🐸"
+    if prob >= 20: return "🐸🐸"
+    if prob > 0: return "🐸"
+    return "❌"
+
+# --- RÉCUPÉRATION DES DONNÉES ---
+url = "https://api.open-meteo.com/v1/forecast"
+params = {
+    "latitude": LAT, "longitude": LON,
+    "hourly": "temperature_2m,precipitation,apparent_temperature",
+    "timezone": "Europe/Berlin",
+    "past_days": 7,
+    "forecast_days": 7
+}
+
+try:
+    response = requests.get(url, params=params)
+    data = response.json()
+
+    if 'hourly' in data:
+        df = pd.DataFrame(data['hourly'])
+        df['time'] = pd.to_datetime(df['time'])
+        maintenant = datetime.now()
+
+        all_results = []
+        for i in range(len(df)):
+            if df.iloc[i]['time'].hour == HEURE_CIBLE:
+                idx = i
+                if idx < 8: continue 
+                
+                row = df.iloc[idx]
+                
+                # 1. Mois
+                f_month = {1:0.1, 2:0.5, 3:1.0, 4:1.0, 5:0.4}.get(row['time'].month, 0.0)
+                
+                # 2. Pluie
+                rain_8h = df.iloc[idx-8 : idx]['precipitation'].sum()
+                f_rain8 = 1.0 if rain_8h >= 10 else (0.1 if rain_8h == 0 else 0.1 + (rain_8h/10)*0.9)
+                
+                # 3. Température
+                temp_8h = df.iloc[idx-8 : idx]['temperature_2m'].mean()
+                f_temp8 = get_linear_score(temp_8h, 4, 8)
+                
+                # 4. Lune
+                illum, moon_emoji = get_moon_info(row['time'].to_pydatetime())
+                f_moon = 1.0 + (illum * 0.2)
+                
+                # Probabilité
+                prob = int(min(100, (f_month * f_rain8 * f_temp8 * f_moon) * 100))
+                
+                all_results.append({
+                    "Date": row['time'],
+                    "Pluie 8h": f"{rain_8h:.1f}mm",
+                    "Temp 8h": f"{temp_8h:.1f}°C",
+                    "Lune": f"{moon_emoji}",
+                    "Prob": prob,
+                    "Résumé": f"{prob}% {get_frog_emoji(prob)}"
+                })
+
+        full_df = pd.DataFrame(all_results)
+        future_df = full_df[full_df['Date'].dt.date >= maintenant.date()].copy()
+        future_df['Date_Fr'] = future_df['Date'].dt.strftime('%d %b (%a)')
+
+        st.subheader(f"🔮 Prévisions : {ville_choisie}")
+        st.table(future_df.drop(columns=['Prob', 'Date']).rename(columns={'Date_Fr': 'Date'}))
         
-        # Algorithme Alpha
-        f_t = 0.1 + ((t-4)/4)*0.9 if 4<=t<=8 else (1.0 if t>8 else 0.05)
-        f_p = 1.0 if p>0 else (0.8 if h>85 else 0.2)
-        f_m = {1:0.1, 2:0.6, 3:1.0, 4:1.0, 5:0.5}.get(datetime.now().month, 0.0)
-        prob = int(min(100, (f_t * f_p * f_m * (1+(illum*0.2))) * 100))
-
-        st.subheader(f"📍 Conditions à {u_ville} (Station {sid})")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Temp.", f"{t}°C")
-        col2.metric("Pluie", f"{p}mm")
-        col3.metric("Humidité", f"{h}%")
-        col4.metric("Lune", f"{m_emoji}")
-
-        st.divider()
-        st.markdown(f"<h1 style='text-align:center;'>{' 🐸 ' * (max(1, prob//20))}</h1>", unsafe_allow_html=True)
-        st.write(f"### Probabilité de migration : **{prob}%**")
-        st.progress(prob/100)
+        st.markdown("<p style='text-align: center; color: grey; margin-top: 50px;'>© n+p wildlife ecology</p>", unsafe_allow_html=True)
     else:
-        st.error("Station météo temporairement hors ligne.")
-
-st.sidebar.caption("© n+p wildlife ecology")
+        st.error("Erreur API Météo.")
+except Exception as e:
+    st.error(f"Erreur technique : {e}")

@@ -1,185 +1,170 @@
 import streamlit as st
-import requests
 import pandas as pd
-from datetime import datetime
+import numpy as np
+import requests
+from datetime import datetime, timedelta
 
-import streamlit as st
+# --- CONFIGURATION ---
+st.set_page_config(
+    page_title="Radar Batraciens Pro", 
+    page_icon="🐸", 
+    layout="wide"
+)
 
-# Data for top 100 Swiss cities (Name: (Latitude, Longitude))
+# --- DONNÉES DES VILLES (Top 100 Suisse) ---
 CITY_DATA = {
-    "Zurich": (47.374, 8.541), "Geneva": (46.202, 6.147), "Basel": (47.555, 7.591),
-    "Lausanne": (46.520, 6.634), "Bern": (46.948, 7.447), "Winterthur": (47.499, 8.729),
-    "Lucerne": (47.050, 8.300), "St. Gallen": (47.424, 9.371), "Lugano": (46.004, 8.951),
-    "Biel/Bienne": (47.133, 7.250), "Bellinzona": (46.195, 9.030), "Thun": (46.767, 7.633),
-    "Köniz": (46.922, 7.413), "La Chaux-de-Fonds": (47.112, 6.838), "Fribourg": (46.800, 7.150),
-    "Uster": (47.350, 8.717), "Schaffhausen": (47.700, 8.633), "Chur": (46.850, 9.533),
-    "Vernier": (46.200, 6.100), "Sion": (46.231, 7.359), "Neuchâtel": (47.000, 6.933),
-    "Lancy": (46.184, 6.122), "Baden": (47.467, 8.300), "Zug": (47.168, 8.517),
-    "Yverdon-les-Bains": (46.779, 6.641), "Emmen": (47.083, 8.300), "Olten": (47.350, 7.900),
-    "Dübendorf": (47.417, 8.617), "Kriens": (47.034, 8.281), "Dietikon": (47.400, 8.400),
-    "Rapperswil-Jona": (47.217, 8.817), "Montreux": (46.431, 6.913), "Frauenfeld": (47.550, 8.900),
-    "Wetzikon": (47.317, 8.800), "Baar": (47.189, 8.526), "Bülach": (47.517, 8.533),
-    "Meyrin": (46.233, 6.082), "Wil": (47.465, 9.049), "Horgen": (47.260, 8.598),
-    "Carouge": (46.183, 6.133), "Kreuzlingen": (47.633, 9.167), "Wädenswil": (47.233, 8.667),
-    "Aarau": (47.400, 8.050), "Riehen": (47.583, 7.633), "Allschwil": (47.550, 7.533),
-    "Renens": (46.533, 6.583), "Wettingen": (47.467, 8.333), "Nyon": (46.383, 6.233),
-    "Vevey": (46.467, 6.850), "Reinach": (47.483, 7.583), "Bulle": (46.615, 7.059),
-    "Adliswil": (47.317, 8.533), "Schlieren": (47.400, 8.450), "Volketswil": (47.383, 8.700),
-    "Regensdorf": (47.433, 8.467), "Thalwil": (47.283, 8.567), "Pully": (46.517, 6.667),
-    "Muttenz": (47.525, 7.648), "Ostermundigen": (46.958, 7.491), "Martigny": (46.103, 7.073),
-    "Sierre": (46.292, 7.532), "Solothurn": (47.217, 7.533), "Grenchen": (47.197, 7.397),
-    "Pratteln": (47.519, 7.694), "Burgdorf": (47.059, 7.623), "Freienbach": (47.200, 8.750),
-    "Wallisellen": (47.417, 8.600), "Binningen": (47.537, 7.570), "Wohlen": (47.350, 8.283),
-    "Herisau": (47.386, 9.279), "Langenthal": (47.212, 7.789), "Morges": (46.509, 6.498),
-    "Steffisburg": (46.777, 7.635), "Lyss": (47.072, 7.305), "Schwyz": (47.021, 8.654),
-    "Arbon": (47.517, 9.433), "Locarno": (46.167, 8.783), "Liestal": (47.484, 7.735),
-    "Küsnacht": (47.317, 8.583), "Stäfa": (47.240, 8.723), "Horw": (47.016, 8.311),
-    "Meilen": (47.270, 8.643), "Thônex": (46.188, 6.198), "Oftringen": (47.313, 7.921),
-    "Ebikon": (47.081, 8.341), "Amriswil": (47.548, 9.300), "Richterswil": (47.206, 8.704),
-    "Versoix": (46.277, 6.169), "Zollikon": (47.340, 8.577), "Glarus Nord": (47.119, 9.066),
-    "Ebikon": (47.081, 8.341), "Ecublens": (46.526, 6.562), "Buchs (SG)": (47.168, 9.479),
-    "Villars-sur-Glâne": (46.793, 7.125), "Neuhausen": (47.684, 8.615), "Le Locle": (47.056, 6.745),
-    "Münchenstein": (47.519, 7.621), "Zofingen": (47.288, 7.946), "Davos": (46.804, 9.837)
+    "Zurich": (47.374, 8.541), "Genève": (46.202, 6.147), "Bâle": (47.555, 7.591),
+    "Lausanne": (46.520, 6.634), "Berne": (46.948, 7.447), "Winterthour": (47.499, 8.729),
+    "Lucerne": (47.050, 8.300), "St-Gall": (47.424, 9.371), "Lugano": (46.004, 8.951),
+    "Bienne": (47.133, 7.250), "Bellinzone": (46.195, 9.030), "Thoune": (46.767, 7.633),
+    "La Chaux-de-Fonds": (47.112, 6.838), "Fribourg": (46.800, 7.150), "Sion": (46.231, 7.359),
+    "Neuchâtel": (47.000, 6.933), "Yverdon-les-Bains": (46.779, 6.641), "Montreux": (46.431, 6.913),
+    "Bulle": (46.615, 7.059), "Martigny": (46.103, 7.073), "Sierre": (46.292, 7.532),
+    "Morges": (46.509, 6.498), "Nyon": (46.383, 6.233), "Vevey": (46.467, 6.850)
 }
 
-# Dropdown UI
-selected_city = st.selectbox("Select a city for the toad migration forecast:", list(CITY_DATA.keys()))
+# --- LOGIQUE SCIENTIFIQUE ---
 
-# Update coordinates automatically
-LAT, LON = CITY_DATA[selected_city]
-st.write(f"Showing results for {selected_city} ({LAT}, {LON})")
-# --- SETTINGS & UI ---
-st.set_page_config(page_title="Toad Predictor Pro", page_icon="🐸", layout="wide")
+def get_moon_data(date):
+    """Calcule l'illumination lunaire simplifiée."""
+    ref_new_moon = datetime(2025, 2, 28)
+    lunar_cycle = 29.53059
+    diff = (date - ref_new_moon).total_seconds() / (24 * 3600)
+    phase = (diff % lunar_cycle) / lunar_cycle
+    illumination = (1 - np.cos(2 * np.pi * phase)) / 2
+    
+    if phase < 0.06 or phase > 0.94: emoji, name = "🌑", "Nouvelle lune"
+    elif phase < 0.19: emoji, name = "🌒", "Premier croissant"
+    elif phase < 0.31: emoji, name = "🌓", "Premier quartier"
+    elif phase < 0.44: emoji, name = "🌔", "Lune gibbeuse"
+    elif phase < 0.56: emoji, name = "🌕", "Pleine lune"
+    elif phase < 0.69: emoji, name = "🌖", "Lune décroissante"
+    elif phase < 0.81: emoji, name = "🌗", "Dernier quartier"
+    else: emoji, name = "🌘", "Dernier croissant"
+    
+    return illumination, emoji, name
 
-st.title("🐸 Swiss Toad Migration Predictor")
+def calculate_prob(temp, rain_8h, rain_2h, month, illum):
+    # Facteur Mois
+    seasonal = {1: 0.1, 2: 0.7, 3: 1.0, 4: 0.9, 5: 0.3, 10: 0.4, 11: 0.2}
+    f_month = seasonal.get(month, 0.05)
+    
+    # Facteur Température (Optimale 8-12°C)
+    if temp < 4: f_temp = 0.1
+    elif temp > 20: f_temp = 0.3
+    else: f_temp = np.exp(-0.5 * ((temp - 10) / 4) ** 2)
+    
+    # Facteur Pluie
+    rain_total = rain_8h + rain_2h
+    f_rain = min(1.0, 0.2 + (rain_total * 0.2)) if rain_total > 0 else 0.2
+    
+    # Facteur Lune (Nuits sombres favorisées)
+    f_lune = 1.15 if illum < 0.3 else (0.95 if illum > 0.7 else 1.0)
+    
+    prob = (f_month * f_temp * f_rain * f_lune) * 100
+    return int(min(100, max(0, prob)))
 
-# Explanatory Section
-st.write("""
-This tool predicts the probability of common toad (*Bufo bufo*) migration during the evening "sunset window." 
-The model uses high-resolution weather data from Open-Meteo, integrating historical records and 7-day forecasts.
+# --- INTERFACE ---
+st.title("🐸 Radar de Migration des Batraciens")
+st.markdown("*Prévisions combinées : Météo temps-réel, Cycles Lunaires et Phénologie*")
 
-**The Math:** The final probability is the **product** of five factors: Month, 8h Rainfall, 2h Rainfall, 8h Mean Temperature, and 2h Mean Felt Temperature. 
-If any single factor is unfavorable (e.g., it's December or the temperature is below 4°C), the final probability drops toward zero.
-""")
-st.divider()
+# Sélection de la ville
+with st.sidebar:
+    st.header("📍 Localisation")
+    ville = st.selectbox("Choisir une ville :", list(CITY_DATA.keys()))
+    LAT, LON = CITY_DATA[ville]
+    TARGET_HOUR = st.slider("Heure d'observation (soir) :", 17, 23, 20)
+    st.divider()
+    st.info("Cet outil prédit l'activité du Crapaud commun et de la Grenouille rousse lors de la 'fenêtre du crépuscule'.")
 
-# --- SIDEBAR INTERFACE ---
-st.sidebar.header("Location & Timing")
-
-locations = {
-    "Lausanne": {"lat": 46.516, "lon": 6.632},
-    "Geneva": {"lat": 46.204, "lon": 6.143},
-    "Zurich": {"lat": 47.376, "lon": 8.541},
-    "Bern": {"lat": 46.948, "lon": 7.447},
-    "Basel": {"lat": 47.559, "lon": 7.588},
-    "Lugano": {"lat": 46.003, "lon": 8.951},
-    "Sion": {"lat": 46.229, "lon": 7.359},
-    "Neuchâtel": {"lat": 46.990, "lon": 6.929}
-}
-
-city_name = st.sidebar.selectbox("Pick a city in Switzerland:", list(locations.keys()))
-LAT = locations[city_name]["lat"]
-LON = locations[city_name]["lon"]
-
-with st.sidebar.expander("Or enter custom coordinates"):
-    LAT = st.number_input("Latitude", value=LAT, format="%.4f")
-    LON = st.number_input("Longitude", value=LON, format="%.4f")
-
-TARGET_HOUR = st.sidebar.slider("Time of Survey (24h format):", 16, 22, 18)
-
-# --- DATA FETCHING & PROCESSING ---
-url = "https://api.open-meteo.com/v1/forecast"
-params = {
-    "latitude": LAT, "longitude": LON,
-    "hourly": "temperature_2m,precipitation,apparent_temperature",
-    "timezone": "Europe/Berlin",
-    "past_days": 14,
-    "forecast_days": 7
-}
-
-def get_linear_score(value, min_val, max_val):
-    if value <= min_val: return 0.1
-    if value >= max_val: return 1.0
-    return 0.1 + ((value - min_val) / (max_val - min_val)) * 0.9
-
-def get_frog_emoji(prob):
-    if prob >= 80: return "🐸🐸🐸🐸"
-    if prob >= 50: return "🐸🐸🐸"
-    if prob >= 20: return "🐸🐸"
-    if prob > 0: return "🐸"
-    return "❌"
+# --- RÉCUPÉRATION DES DONNÉES ---
+@st.cache_data(ttl=3600)
+def get_forecast(lat, lon):
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": lat, "longitude": lon,
+        "hourly": "temperature_2m,precipitation,relative_humidity_2m",
+        "timezone": "Europe/Berlin", "past_days": 2, "forecast_days": 7
+    }
+    r = requests.get(url, params=params)
+    return r.json()
 
 try:
-    response = requests.get(url, params=params)
-    data = response.json()
+    data = get_forecast(LAT, LON)
+    df = pd.DataFrame(data['hourly'])
+    df['time'] = pd.to_datetime(df['time'])
+    
+    # Calcul des probabilités pour chaque jour à l'heure cible
+    results = []
+    for i in range(len(df)):
+        if df.iloc[i]['time'].hour == TARGET_HOUR:
+            if i < 8: continue
+            
+            row = df.iloc[i]
+            t = row['temperature_2m']
+            r8 = df.iloc[i-8:i]['precipitation'].sum()
+            r2 = df.iloc[i-2:i]['precipitation'].sum()
+            h = row['relative_humidity_2m']
+            m = row['time'].month
+            illum, m_emoji, m_name = get_moon_data(row['time'])
+            
+            p = calculate_prob(t, r8, r2, m, illum)
+            
+            results.append({
+                "Date": row['time'],
+                "Temp": t,
+                "Pluie_8h": r8,
+                "Humidité": h,
+                "Lune": m_emoji,
+                "Prob": p
+            })
 
-    if 'hourly' in data:
-        df = pd.DataFrame(data['hourly'])
-        df['time'] = pd.to_datetime(df['time'])
-        now = datetime.now()
+    res_df = pd.DataFrame(results)
+    now = datetime.now()
+    today_res = res_df[res_df['Date'].dt.date == now.date()]
 
-        all_results = []
-        for i in range(len(df)):
-            if df.iloc[i]['time'].hour == TARGET_HOUR:
-                idx = i
-                if idx < 8: continue 
-                
-                row = df.iloc[idx]
-                # Month Factor
-                month_map = {1: 0.1, 2: 0.5, 3: 1.0, 4: 1.0}
-                f_month = month_map.get(row['time'].month, 0.0)
-                
-                # Rainfall 8h (Sum)
-                rain_8h = df.iloc[idx-8 : idx]['precipitation'].sum()
-                f_rain8 = 1.0 if rain_8h >= 10 else (0.1 if rain_8h == 0 else 0.1 + (rain_8h/10)*0.9)
-                
-                # Rainfall 2h (Sum)
-                rain_2h = df.iloc[idx-2 : idx]['precipitation'].sum()
-                f_rain2 = 1.0 if rain_2h >= 4 else (0.1 if rain_2h == 0 else 0.1 + (rain_2h/4)*0.9)
-                
-                # Mean Temp 8h
-                temp_8h = df.iloc[idx-8 : idx]['temperature_2m'].mean()
-                f_temp8 = get_linear_score(temp_8h, 4, 8)
-                
-                # Mean Felt Temp 2h
-                felt_2h = df.iloc[idx-2 : idx]['apparent_temperature'].mean()
-                f_felt2 = get_linear_score(felt_2h, 4, 8)
-                
-                # Probability calculation (The product of all 5 factors)
-                final_prob = int((f_month * f_rain8 * f_rain2 * f_temp8 * f_felt2) * 100)
-                
-                all_results.append({
-                    "Date": row['time'],
-                    "Month (%)": f"{int(f_month*100)}%",
-                    "Rain 8h": f"{rain_8h:.1f}mm ({int(f_rain8*100)}%)",
-                    "Rain 2h": f"{rain_2h:.1f}mm ({int(f_rain2*100)}%)",
-                    "Temp 8h": f"{temp_8h:.1f}C ({int(f_temp8*100)}%)",
-                    "Felt 2h": f"{felt_2h:.1f}C ({int(f_felt2*100)}%)",
-                    "Prob": final_prob,
-                    "Summary": f"{final_prob}% {get_frog_emoji(final_prob)}"
-                })
-
-        full_df = pd.DataFrame(all_results)
-        past_df = full_df[full_df['Date'].dt.date < now.date()].copy()
-        future_df = full_df[full_df['Date'].dt.date >= now.date()].copy()
-
-        # Date formatting for clean tables
-        future_df['Date_Str'] = future_df['Date'].dt.strftime('%a, %b %d')
-        past_df['Date_Str'] = past_df['Date'].dt.strftime('%a, %b %d')
-
-        # --- MAIN DISPLAY ---
-        st.subheader(f"🔮 Forecast for {city_name} (Next 7 Days)")
-        st.table(future_df.drop(columns=['Prob', 'Date']).rename(columns={'Date_Str': 'Date'}))
-
-        st.divider()
-
-        st.subheader(f"📜 History for {city_name} (Last 14 Days)")
-        st.table(past_df.drop(columns=['Prob', 'Date']).rename(columns={'Date_Str': 'Date'}))
+    # --- DASHBOARD DU SOIR (BILAN) ---
+    if not today_res.empty:
+        st.subheader(f"📊 Bilan pour ce soir à {ville} ({TARGET_HOUR}h)")
+        score = today_res.iloc[0]['Prob']
         
-        # Copyright Footer
-        st.markdown("<p style='text-align: center; color: grey; margin-top: 50px;'>© n+p wildlife ecology</p>", unsafe_allow_html=True)
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("🌡️ Température", f"{today_res.iloc[0]['Temp']}°C")
+        c2.metric("🌧️ Pluie (8h)", f"{today_res.iloc[0]['Pluie_8h']:.1f} mm")
+        c3.metric("💧 Humidité", f"{today_res.iloc[0]['Humidité']}%")
+        illum_val, m_emoji, m_name = get_moon_data(now)
+        c4.metric(f"{m_emoji} Lune", m_name)
 
-    else:
-        st.error("Error connecting to weather API.")
+        # Indicateur visuel
+        frogs = "🐸" * (max(1, score // 20))
+        color = "red" if score > 70 else "orange" if score > 40 else "green"
+        
+        st.markdown(f"""
+        <div style="background-color:rgba(0,0,0,0.05); padding:20px; border-radius:10px; border-left: 10px solid {color};">
+            <h1 style="margin:0; color:{color};">{score}% - {frogs}</h1>
+            <p style="font-size:1.2em;">{"🚨 <b>ALERTE MIGRATION MAJEURE</b> : Prudence maximale sur les routes !" if score > 70 else 
+               "⚠️ <b>ACTIVITÉ MODÉRÉE</b> : Quelques déplacements attendus." if score > 40 else 
+               "💤 <b>ACTIVITÉ FAIBLE</b> : Conditions peu favorables."}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # --- TABLEAU DE SYNTHÈSE 7 JOURS ---
+    st.divider()
+    st.subheader("📅 Prévisions sur 7 jours")
+    
+    future_df = res_df[res_df['Date'].dt.date >= now.date()].copy()
+    future_df['Date'] = future_df['Date'].dt.strftime('%A %d %b')
+    
+    # Formatage pour affichage
+    view_df = future_df.rename(columns={
+        "Temp": "Temp (°C)", 
+        "Pluie_8h": "Pluie 8h (mm)", 
+        "Prob": "Probabilité (%)"
+    })
+    
+    st.table(view_df.set_index('Date'))
+
 except Exception as e:
-    st.error(f"Technical Error: {e}")
+    st.error(f"Erreur lors de la récupération des données : {e}")
+
+st.caption(f"© n+p wildlife ecology | Données : Open-Meteo & Modèles Phénologiques | Actualisé à {datetime.now().strftime('%H:%M')}")

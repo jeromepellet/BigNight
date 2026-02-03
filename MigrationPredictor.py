@@ -1,32 +1,28 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import requests
-import os
-from datetime import datetime
-from math import radians, cos, sin, asin, sqrt
-
 import os
 import streamlit as st
 
-# --- ÉTAPE 1 : FIX POUR STREAMLIT CLOUD ---
+# --- ÉTAPE 1 : CONFIGURATION ENVIRONNEMENT (DOIT ÊTRE AU DÉBUT) ---
 # On définit le dossier de cache AVANT d'importer pgeocode
-# /tmp est le seul dossier garanti en écriture sur Streamlit Cloud
 os.environ['PGEOCODE_DATA_DIR'] = '/tmp/pgeocode_data'
 
-# On crée le dossier manuellement pour éviter tout refus de permission
 if not os.path.exists('/tmp/pgeocode_data'):
     try:
         os.makedirs('/tmp/pgeocode_data')
     except Exception as e:
-        st.error(f"Erreur de création de dossier: {e}")
+        # Note: st.error ne s'affichera que si l'app arrive à charger l'UI
+        print(f"Erreur dossier: {e}") 
 
+# --- ÉTAPE 2 : IMPORTS DES LIBRAIRIES ---
 import pgeocode
 import pandas as pd
+import numpy as np
+import requests
+from datetime import datetime
+from math import radians, cos, sin, asin, sqrt
 
-# --- CONFIGURATION PAGE ---
+# --- ÉTAPE 3 : CONFIGURATION PAGE ---
 st.set_page_config(
-    page_title="Radar Batraciens Pro", 
+    page_title="Radar Batraciens Live", 
     page_icon="🐸", 
     layout="wide"
 )

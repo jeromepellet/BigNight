@@ -1,24 +1,21 @@
 import streamlit as st
 import requests
 import pandas as pd
+import numpy as np
 from datetime import datetime
 
-# --- SETTINGS & UI ---
+# --- CONFIGURATION & UI ---
 st.set_page_config(page_title="Toad Predictor Pro", page_icon="🐸", layout="wide")
 
 st.title("🐸 Swiss Toad Migration Predictor")
 
-# Explanatory Section
 st.write("""
-This tool predicts the probability of common toad (*Bufo bufo*) migration during the evening "sunset window." 
-The model uses high-resolution weather data from Open-Meteo, integrating historical records and 7-day forecasts.
-
-**The Math:** The final probability is the **product** of five factors: Month, 8h Rainfall, 2h Rainfall, 8h Mean Temperature, and 2h Mean Felt Temperature. 
-If any single factor is unfavorable (e.g., it's December or the temperature is below 4°C), the final probability drops toward zero.
+This tool predicts common toad (*Bufo bufo*) migration. 
+**The Math:** Probability = Month × Rain × Temp × Moon.
 """)
 st.divider()
 
-# --- SIDEBAR INTERFACE ---
+# --- SIDEBAR ---
 st.sidebar.header("Location & Timing")
 
 locations = {
@@ -32,25 +29,28 @@ locations = {
     "Neuchâtel": {"lat": 46.990, "lon": 6.929}
 }
 
-city_name = st.sidebar.selectbox("Pick a city in Switzerland:", list(locations.keys()))
+city_name = st.sidebar.selectbox("Pick a city:", list(locations.keys()))
 LAT = locations[city_name]["lat"]
 LON = locations[city_name]["lon"]
 
-with st.sidebar.expander("Or enter custom coordinates"):
-    LAT = st.number_input("Latitude", value=LAT, format="%.4f")
-    LON = st.number_input("Longitude", value=LON, format="%.4f")
+TARGET_HOUR = st.sidebar.slider("Time of Survey (24h):", 16, 22, 19)
 
-TARGET_HOUR = st.sidebar.slider("Time of Survey (24h format):", 16, 22, 18)
-
-# --- DATA FETCHING & PROCESSING ---
-url = "https://api.open-meteo.com/v1/forecast"
-params = {
-    "latitude": LAT, "longitude": LON,
-    "hourly": "temperature_2m,precipitation,apparent_temperature",
-    "timezone": "Europe/Berlin",
-    "past_days": 14,
-    "forecast_days": 7
-}
+# --- FUNCTIONS ---
+def get_moon_info(date):
+    # Reference: New Moon on Feb 28, 2025
+    ref_new_moon = datetime(2025, 2, 28)
+    diff = (date - ref_new_moon).total_seconds() / (24 * 3600)
+    phase = (diff % 29.53) / 29.53
+    illum = (1 - np.cos(2 * np.pi * phase)) / 2
+    if phase < 0.06 or phase > 0.94: emoji = "🌑"
+    elif phase < 0.19: emoji = "🌒"
+    elif phase < 0.31: emoji = "🌓"
+    elif phase < 0.44: emoji = "🌔"
+    elif phase < 0.56: emoji = "🌕"
+    elif phase < 0.69: emoji = "🌖"
+    elif phase < 0.81: emoji = "🌗"
+    else: emoji = "🌘"
+    return illum, emoji
 
 def get_linear_score(value, min_val, max_val):
     if value <= min_val: return 0.1
@@ -58,11 +58,18 @@ def get_linear_score(value, min_val, max_val):
     return 0.1 + ((value - min_val) / (max_val - min_val)) * 0.9
 
 def get_frog_emoji(prob):
-    if prob >= 80: return "🐸🐸🐸🐸"
-    if prob >= 50: return "🐸🐸🐸"
-    if prob >= 20: return "🐸🐸"
-    if prob > 0: return "🐸"
+    if prob >= 80: return "🐸🐸🐸"
+    if prob >= 50: return "🐸🐸"
+    if prob >= 20: return "🐸"
     return "❌"
+
+# --- DATA FETCHING ---
+url = "https://api.open-meteo.com/v1/forecast"
+params = {
+    "latitude": LAT, "longitude": LON,
+    "hourly": "temperature_2m,precipitation,apparent_temperature",
+    "timezone": "Europe/Berlin", "past_days": 7, "forecast_days": 7
+}
 
 try:
     response = requests.get(url, params=params)
@@ -80,61 +87,30 @@ try:
                 if idx < 8: continue 
                 
                 row = df.iloc[idx]
-                # Month Factor
-                month_map = {1: 0.1, 2: 0.5, 3: 1.0, 4: 1.0}
-                f_month = month_map.get(row['time'].month, 0.0)
+                dt_obj = row['time'].to_pydatetime()
                 
-                # Rainfall 8h (Sum)
+                # Factors
+                f_month = {1:0.1, 2:0.5, 3:1.0, 4:1.0, 5:0.5}.get(dt_obj.month, 0.0)
                 rain_8h = df.iloc[idx-8 : idx]['precipitation'].sum()
-                f_rain8 = 1.0 if rain_8h >= 10 else (0.1 if rain_8h == 0 else 0.1 + (rain_8h/10)*0.9)
-                
-                # Rainfall 2h (Sum)
-                rain_2h = df.iloc[idx-2 : idx]['precipitation'].sum()
-                f_rain2 = 1.0 if rain_2h >= 4 else (0.1 if rain_2h == 0 else 0.1 + (rain_2h/4)*0.9)
-                
-                # Mean Temp 8h
+                f_rain = 1.0 if rain_8h >= 10 else (0.1 if rain_8h == 0 else 0.1 + (rain_8h/10)*0.9)
                 temp_8h = df.iloc[idx-8 : idx]['temperature_2m'].mean()
-                f_temp8 = get_linear_score(temp_8h, 4, 8)
+                f_temp = get_linear_score(temp_8h, 4, 8)
                 
-                # Mean Felt Temp 2h
-                felt_2h = df.iloc[idx-2 : idx]['apparent_temperature'].mean()
-                f_felt2 = get_linear_score(felt_2h, 4, 8)
+                illum, moon_emoji = get_moon_info(dt_obj)
+                f_moon = 1.0 + (illum * 0.2)
                 
-                # Probability calculation (The product of all 5 factors)
-                final_prob = int((f_month * f_rain8 * f_rain2 * f_temp8 * f_felt2) * 100)
+                prob = int(min(100, (f_month * f_rain * f_temp * f_moon) * 100))
                 
                 all_results.append({
-                    "Date": row['time'],
-                    "Month (%)": f"{int(f_month*100)}%",
-                    "Rain 8h": f"{rain_8h:.1f}mm ({int(f_rain8*100)}%)",
-                    "Rain 2h": f"{rain_2h:.1f}mm ({int(f_rain2*100)}%)",
-                    "Temp 8h": f"{temp_8h:.1f}C ({int(f_temp8*100)}%)",
-                    "Felt 2h": f"{felt_2h:.1f}C ({int(f_felt2*100)}%)",
-                    "Prob": final_prob,
-                    "Summary": f"{final_prob}% {get_frog_emoji(final_prob)}"
+                    "Date": dt_obj.strftime('%a, %b %d'),
+                    "Rain 8h": f"{rain_8h:.1f}mm",
+                    "Temp 8h": f"{temp_8h:.1f}C",
+                    "Moon": moon_emoji,
+                    "Summary": f"{prob}% {get_frog_emoji(prob)}"
                 })
 
-        full_df = pd.DataFrame(all_results)
-        past_df = full_df[full_df['Date'].dt.date < now.date()].copy()
-        future_df = full_df[full_df['Date'].dt.date >= now.date()].copy()
-
-        # Date formatting for clean tables
-        future_df['Date_Str'] = future_df['Date'].dt.strftime('%a, %b %d')
-        past_df['Date_Str'] = past_df['Date'].dt.strftime('%a, %b %d')
-
-        # --- MAIN DISPLAY ---
-        st.subheader(f"🔮 Forecast for {city_name} (Next 7 Days)")
-        st.table(future_df.drop(columns=['Prob', 'Date']).rename(columns={'Date_Str': 'Date'}))
-
-        st.divider()
-
-        st.subheader(f"📜 History for {city_name} (Last 14 Days)")
-        st.table(past_df.drop(columns=['Prob', 'Date']).rename(columns={'Date_Str': 'Date'}))
-        
-        # Copyright Footer
-        st.markdown("<p style='text-align: center; color: grey; margin-top: 50px;'>© n+p wildlife ecology</p>", unsafe_allow_html=True)
-
-    else:
-        st.error("Error connecting to weather API.")
+        st.subheader(f"🔮 Forecast for {city_name}")
+        st.table(pd.DataFrame(all_results).set_index("Date"))
+        st.markdown("<p style='text-align: center; color: grey;'>© n+p wildlife ecology</p>", unsafe_allow_html=True)
 except Exception as e:
     st.error(f"Technical Error: {e}")

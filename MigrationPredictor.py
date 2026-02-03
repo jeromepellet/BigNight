@@ -8,7 +8,12 @@ from math import radians, cos, sin, asin, sqrt
 
 # --- CONFIGURATION ENVIRONNEMENT ---
 # Indispensable pour le déploiement Cloud : définit un dossier accessible en écriture
+import os
+# On crée le dossier s'il n'existe pas
+if not os.path.exists('/tmp/pgeocode_data'):
+    os.makedirs('/tmp/pgeocode_data')
 os.environ['PGEOCODE_DATA_DIR'] = '/tmp/pgeocode_data'
+
 import pgeocode
 
 # --- CONFIGURATION PAGE ---

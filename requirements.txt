@@ -1,6 +1,5 @@
 streamlit
+requests
 pandas
 numpy
-requests
-datetime
 pgeocode

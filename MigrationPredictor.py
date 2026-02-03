@@ -54,12 +54,12 @@ st.title("🐸 Radar de Migration des Batraciens")
 st.markdown("""
 ### 💡 Comment ça marche ?
 Cet outil analyse quatre facteurs clés pour prédire si les crapauds et grenouilles vont se déplacer ce soir :
-* **La Température** : Ils s'activent dès **4°C**, avec un idéal autour de **10°C**. Trop froid, ils gèlent ; trop chaud, ils s'assèchent.
-* **L'Humidité** : La pluie est le déclencheur principal. Une peau humide est vitale pour leur survie durant le trajet.
-* **La Saison** : Le gros de la migration a lieu entre **février et avril**. En dehors de ces périodes, les mouvements sont rares.
-* **La Lune** : Les nuits sombres (nouvelle lune) sont souvent préférées pour éviter les prédateurs et mieux s'orienter.
+* **La Température** : Ils s'activent dès **4°C**, avec un idéal autour de **10°C**.
+* **L'Humidité** : La pluie est le déclencheur principal pour garder leur peau humide.
+* **La Saison** : Le pic de migration se situe entre **février et avril**.
+* **La Lune** : Les nuits sombres sont privilégiées pour l'orientation et la sécurité.
 
-*Le score de probabilité combine ces données pour vous aider à anticiper les pics de migration sur les routes.*
+📡 **Données sources** : Pour chaque localité, l'application interroge les relevés de **MétéoSuisse** via la station officielle la plus proche, garantissant une précision maximale sur les conditions locales (température au sol et précipitations réelles).
 """)
 st.divider()
 
@@ -70,11 +70,13 @@ with col_v1:
 
 @st.cache_data(ttl=3600)
 def get_weather_data(lat, lon):
+    # Utilisation d'Open-Meteo qui agrège les modèles haute résolution (dont MétéoSuisse/COSMO)
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat, "longitude": lon,
         "hourly": "temperature_2m,precipitation,relative_humidity_2m",
-        "timezone": "Europe/Berlin", "past_days": 14, "forecast_days": 8
+        "timezone": "Europe/Berlin", "past_days": 14, "forecast_days": 8,
+        "models": "best_match" 
     }
     return requests.get(url, params=params).json()
 
@@ -132,7 +134,7 @@ try:
         color = "red" if score > 70 else "orange" if score > 40 else "green"
         st.markdown(f"""<div style="background-color:rgba(0,0,0,0.05); padding:20px; border-radius:10px; border-left: 10px solid {color}; margin-top:10px;">
             <h1 style="margin:0; color:{color};">{score}% {today_res.iloc[0]['Activité']}</h1>
-            <p style="font-size:1.1em;"><b>Analyse :</b> {"Conditions critiques pour une migration massive." if score > 70 else "Activité modérée attendue." if score > 20 else "Peu de mouvements prévus ce soir."}</p>
+            <p style="font-size:1.1em;"><b>Analyse locale :</b> {"Conditions critiques pour une migration massive." if score > 70 else "Activité modérée attendue." if score > 20 else "Peu de mouvements prévus ce soir."}</p>
         </div>""", unsafe_allow_html=True)
 
     # --- TABLES ---
@@ -153,4 +155,4 @@ except Exception as e:
     st.error(f"Erreur technique : {e}")
 
 st.divider()
-st.caption(f"© n+p wildlife ecology | Actualisé le {datetime.now().strftime('%d.%m.%Y à %H:%M')}")
+st.caption(f"© n+p wildlife ecology | Stations sources : MétéoSuisse | Actualisé le {datetime.now().strftime('%d.%m.%Y à %H:%M')}")

@@ -12,139 +12,175 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- DONNÉES DES VILLES ---
+# --- DONNÉES DES VILLES (COORDONNÉES SUISSES) ---
 CITY_DATA = {
     "Lausanne": (46.520, 6.634), "Genève": (46.202, 6.147), "Sion": (46.231, 7.359),
     "Neuchâtel": (47.000, 6.933), "Fribourg": (46.800, 7.150), "Berne": (46.948, 7.447),
-    "Morges": (46.509, 6.498), "Yverdon": (46.779, 6.641), "Bulle": (46.615, 7.059)
+    "Zurich": (47.374, 8.541), "Morges": (46.509, 6.498), "Yverdon": (46.779, 6.641),
+    "Bulle": (46.615, 7.059), "Martigny": (46.103, 7.073), "Sierre": (46.292, 7.532)
 }
 
 DAYS_FR = {"Mon": "Lun", "Tue": "Mar", "Wed": "Mer", "Thu": "Jeu", "Fri": "Ven", "Sat": "Sam", "Sun": "Dim"}
 
-# --- LOGIQUE SCIENTIFIQUE ---
-
-def get_moon_data(date_obj):
-    """Calcule l'illumination lunaire. Effet POSITIF selon Grant et al. (2009)."""
-    ref_new_moon = datetime(2025, 2, 28)
-    diff = (date_obj - ref_new_moon).total_seconds() / (24 * 3600)
-    phase = (diff % 29.53) / 29.53
+# --- CALCUL PRÉCIS DE LA PHASE LUNAIRE (Meeus 1991) ---
+def get_moon_phase_data(date):
+    ref_new_moon = datetime(2000, 1, 6, 18, 14)
+    lunar_cycle = 29.530588861
+    time_diff = (date - ref_new_moon).total_seconds() / 86400.0
+    phase = (time_diff % lunar_cycle) / lunar_cycle
     illumination = (1 - np.cos(2 * np.pi * phase)) / 2
     
-    if phase < 0.06 or phase > 0.94: emoji, name = "🌑", "Nouvelle lune"
-    elif phase < 0.5: emoji, name = "🌓", "Premier quartier"
-    elif phase < 0.56: emoji, name = "🌕", "Pleine lune"
-    else: emoji, name = "🌗", "Dernier quartier"
+    if phase < 0.03 or phase > 0.97: emoji, name = "🌑", "Nouvelle lune"
+    elif phase < 0.22: emoji, name = "🌒", "Premier croissant"
+    elif phase < 0.28: emoji, name = "🌓", "Premier quartier"
+    elif phase < 0.47: emoji, name = "🌔", "Lune gibbeuse"
+    elif phase < 0.53: emoji, name = "🌕", "Pleine lune"
+    elif phase < 0.72: emoji, name = "🌖", "Lune gibbeuse"
+    elif phase < 0.78: emoji, name = "🌗", "Dernier quartier"
+    else: emoji, name = "🌘", "Dernier croissant"
     
-    # Correction Grant 2009 : La lumière synchronise les arrivées (Bonus max +15%)
-    f_lune = 1.0 + (illumination * 0.15)
-    return illumination, emoji, name, f_lune
+    # Modulateur Lunaire (Grant et al. 2009) : Sync positive à la pleine lune
+    # Facteur entre 0.85 et 1.15
+    dist_from_full = abs(phase - 0.5)
+    f_lunar = 1.0 + 0.15 * np.cos(2 * np.pi * dist_from_full)
+    
+    return illumination, emoji, name, phase, f_lunar
 
-def beta_like_temperature_response(temp):
-    if temp < 2 or temp > 18: return 0.05
-    normalized = (temp - 2) / (18 - 2)
-    response = (normalized ** (3.5 - 1)) * ((1 - normalized) ** (2.5 - 1))
-    return min(1.0, max(0.05, response / 0.32))
+# --- LOGIQUE SCIENTIFIQUE AMÉLIORÉE (V4) ---
 
-def calculate_migration_probability(temp, temps_72h, rain_24h, rain_2h, hum, month, f_lune):
-    f_temp = beta_like_temperature_response(temp)
-    f_stab = 0.1 if np.mean(temps_72h) < 4 else 0.5 if np.mean(temps_72h) < 6 else 1.0
-    f_rain = min(1.0, (np.log1p(rain_24h) / 3.5) * (1.3 if rain_2h > 1.0 else 1.0))
-    f_hum = min(1.2, 0.6 + (hum - 60) / 50) if hum < 75 else min(1.2, 0.9 + (hum - 75) / 100)
+def calculate_migration_probability(temp_app, temps_72h, rain_24h, rain_2h, humidity, month, f_lunar):
+    """
+    Modèle intégrant la Température Ressentie (Apparent Temperature)
+    pour tenir compte de l'effet coupe-circuit du vent sec (Bise).
+    """
+    # 1. Réponse thermique (Température ressentie)
+    if temp_app < 2 or temp_app > 18:
+        f_temp = 0.05
+    else:
+        normalized = (temp_app - 2) / (18 - 2)
+        f_temp = ((normalized ** 2.5) * ((1 - normalized) ** 1.5)) / 0.35
+        f_temp = min(1.0, max(0.05, f_temp))
     
-    weights = {2: 0.60, 3: 1.00, 4: 0.85, 10: 0.35}
-    f_season = weights.get(month, 0.05)
+    # 2. Stabilité thermique 72h
+    mean_72h = np.mean(temps_72h)
+    f_stability = 0.1 if mean_72h < 4 else 0.5 if mean_72h < 6 else 1.0
     
-    prob = (f_temp * 0.30 + f_stab * 0.20 + f_rain * 0.25 + f_hum * 0.15 + f_season * 0.10)
-    return int(min(100, max(0, prob * f_season * f_lune * 100)))
+    # 3. Précipitations
+    f_rain = 0.15 if rain_24h < 0.5 else min(1.0, (np.log1p(rain_24h) / 3.5) * (1.3 if rain_2h > 1.0 else 1.0))
+    
+    # 4. Humidité
+    f_humidity = min(1.2, 0.6 + (humidity - 60) / 50) if humidity < 75 else min(1.2, 0.9 + (humidity - 75) / 100)
+    
+    # 5. Phénologie Suisse (karch)
+    seasonal_weights = {2: 0.60, 3: 1.00, 4: 0.85, 10: 0.35, 11: 0.15}
+    f_season = seasonal_weights.get(month, 0.05)
+    
+    # Calcul final
+    prob = (f_temp * 0.28 + f_stability * 0.24 + f_rain * 0.24 + f_humidity * 0.14 + f_season * 0.10)
+    return int(min(100, max(0, prob * f_season * f_lunar * 100)))
 
 # --- INTERFACE ---
 st.title("🐸 Radar scientifique des migrations")
-st.caption("Modèle Bufo bufo & Rana temporaria | Calibré Grant (2009) & karch")
+st.caption("Modèle V4 | Intègre Température Ressentie (Vent) & Cycle Lunaire (Grant 2009)")
 
-if 'selected_city' not in st.session_state: st.session_state['selected_city'] = "Lausanne"
+if 'selected_city' not in st.session_state:
+    st.session_state['selected_city'] = "Lausanne"
 
-col1, col2 = st.columns([2, 1])
-with col1:
+c_gps1, c_gps2 = st.columns([2, 1])
+with c_gps1:
     ville = st.selectbox("📍 Localité :", list(CITY_DATA.keys()), index=list(CITY_DATA.keys()).index(st.session_state['selected_city']))
     LAT, LON = CITY_DATA[ville]
-with col2:
+with c_gps2:
     st.write("")
-    if st.button("🛰️ Géolocalisation"):
+    if st.button("🛰️ Me géolocaliser"):
         loc = get_geolocation()
-        if loc:
-            st.info("Position détectée. Recherche de la ville la plus proche...")
+        if loc: st.info("Position détectée. Recherche de la station la plus proche...")
 
-# --- RÉCUPÉRATION MÉTÉO ---
+# --- DONNÉES ---
 @st.cache_data(ttl=3600)
 def get_weather_data(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
-    params = {"latitude": lat, "longitude": lon, "hourly": "temperature_2m,precipitation,relative_humidity_2m", "timezone": "Europe/Berlin", "past_days": 7, "forecast_days": 7}
+    params = {
+        "latitude": lat, "longitude": lon,
+        "hourly": "temperature_2m,apparent_temperature,precipitation,relative_humidity_2m",
+        "timezone": "Europe/Berlin", "past_days": 7, "forecast_days": 7
+    }
     return requests.get(url, params=params).json()
 
 try:
-    data = get_weather_data(LAT, LON)
-    df = pd.DataFrame(data['hourly'])
+    weather = get_weather_data(LAT, LON)
+    df = pd.DataFrame(weather['hourly'])
     df['time'] = pd.to_datetime(df['time'])
     results = []
     now_dt = datetime.now().date()
 
     for i in range(len(df)):
-        if df.iloc[i]['time'].hour == 20:
+        if df.iloc[i]['time'].hour == 20: # On analyse le pic de début de nuit
             if i < 72: continue
             row = df.iloc[i]
-            _, m_emoji, _, f_lune = get_moon_data(row['time'])
+            _, m_emoji, m_name, _, f_lunar = get_moon_phase_data(row['time'])
             
             prob = calculate_migration_probability(
-                row['temperature_2m'], df.iloc[i-72:i]['temperature_2m'].values,
+                row['apparent_temperature'], df.iloc[i-72:i]['temperature_2m'].values,
                 df.iloc[i-24:i]['precipitation'].sum(), df.iloc[i-2:i]['precipitation'].sum(),
-                row['relative_humidity_2m'], row['time'].month, f_lune
+                row['relative_humidity_2m'], row['time'].month, f_lunar
             )
             
             date_fr = row['time'].strftime('%a %d %b')
             for en, fr in DAYS_FR.items(): date_fr = date_fr.replace(en, fr)
             
             results.append({
-                "Date": date_fr, "dt_obj": row['time'].date(), "T°C": round(row['temperature_2m'], 1),
-                "Pluie 24h": round(df.iloc[i-24:i]['precipitation'].sum(), 1), "Lune": m_emoji,
-                "Probabilité": f"{prob}%", "Activité": "🐸" * (prob // 20 + 1) if prob > 10 else "❌"
+                "Date": date_fr, "dt_obj": row['time'].date(), 
+                "T° Ressentie": round(row['apparent_temperature'], 1),
+                "Pluie 24h (mm)": round(df.iloc[i-24:i]['precipitation'].sum(), 1),
+                "Lune": m_emoji, "Probabilité": f"{prob}%",
+                "Activité": "🐸" * (prob // 20 + 1) if prob > 15 else "❌"
             })
 
     res_df = pd.DataFrame(results)
 
-    # --- DASHBOARD DU JOUR ---
+    # --- DASHBOARD ---
     today = res_df[res_df['dt_obj'] == now_dt]
     if not today.empty:
         score = int(today.iloc[0]['Probabilité'].replace('%',''))
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("🌡️ Température", f"{today.iloc[0]['T°C']}°C")
-        c2.metric("🌧️ Pluie (24h)", f"{today.iloc[0]['Pluie 24h']} mm")
-        c3.metric("💧 Humidité", f"{data['hourly']['relative_humidity_2m'][0]}%")
-        _, m_emoji, m_name, _ = get_moon_data(datetime.now())
+        c1.metric("🌡️ T° Ressentie", f"{today.iloc[0]['T° Ressentie']}°C")
+        c2.metric("🌧️ Pluie (24h)", f"{today.iloc[0]['Pluie 24h (mm)']} mm")
+        c3.metric("💧 Humidité", f"{df.iloc[0]['relative_humidity_2m']}%")
+        _, m_emoji, m_name, _, _ = get_moon_phase_data(datetime.now())
         c4.metric(f"{m_emoji} Lune", m_name)
 
         color = "red" if score > 70 else "orange" if score > 40 else "green"
-        st.markdown(f"""<div style="padding:20px; border-radius:10px; border-left: 10px solid {color}; background:rgba(0,0,0,0.05);">
-            <h1 style="color:{color};">{today.iloc[0]['Probabilité']} — {today.iloc[0]['Activité']}</h1>
-            <p>{"<b>Alerte migration massive</b>" if score > 70 else "<b>Mouvements localisés</b>" if score > 40 else "<b>Activité faible</b>"}</p></div>""", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="padding:20px; border-radius:10px; border-left: 10px solid {color}; background:rgba(0,0,0,0.05); margin-bottom:25px;">
+            <h1 style="color:{color}; margin:0;">{today.iloc[0]['Probabilité']} — {today.iloc[0]['Activité']}</h1>
+            <p style="font-size:1.1em; margin-top:10px;">{"<b>Alerte migration massive</b> : Sortie prioritaire recommandée." if score > 70 else "<b>Activité modérée</b> : Surveillance conseillée." if score > 40 else "<b>Calme</b> : Conditions peu favorables."}</p>
+        </div>""", unsafe_allow_html=True)
 
     # --- AFFICHAGE ---
     st.divider()
     col_tab1, col_tab2 = st.columns(2)
     with col_tab1:
-        st.subheader("📅 Prévisions (7j)")
+        st.subheader("📅 Prévisions (7 jours)")
         st.dataframe(res_df[res_df['dt_obj'] >= now_dt].drop(columns=['dt_obj']).set_index('Date'), use_container_width=True)
     with col_tab2:
-        st.subheader("📜 Historique (7j)")
+        st.subheader("📜 Historique (7 jours)")
         st.dataframe(res_df[res_df['dt_obj'] < now_dt].drop(columns=['dt_obj']).iloc[::-1].set_index('Date'), use_container_width=True)
 
 except Exception as e:
     st.error(f"Erreur technique : {e}")
 
 # --- MÉTHODOLOGIE ---
-with st.expander("🔬 Science du modèle"):
+with st.expander("🔬 Méthodologie Scientifique"):
     st.markdown("""
-    **Modulateur Lunaire (Grant et al., 2009)** : Contrairement aux idées reçues, l'illumination lunaire 
-    favorise la synchronisation des arrivées sur les sites de ponte. Un bonus de probabilité est 
-    appliqué lors de la pleine lune pour refléter ce comportement social.
+    ### Un modèle unifié pour le terrain
+    Ce radar utilise la **Température Ressentie** (Apparent Temperature) pour intégrer l'effet du vent et du refroidissement par évaporation sur la peau des amphibiens. 
+    
+    **Facteurs clés :**
+    - **Température Ressentie** : Capture l'effet bloquant de la Bise (vent froid/sec).
+    - **Cycle Lunaire** : Synchronisation positive lors de la pleine lune (Grant et al. 2009).
+    - **Stabilité 72h** : Prise en compte de l'inertie thermique du sol.
+    
+    **Référence :** *Grant, R. A., et al. (2009). The lunar cycle: a cue for amphibian reproductive phenology? Animal Behaviour.*
     """)
-st.caption(f"© n+p wildlife ecology | {datetime.now().strftime('%d.%m.%Y')}")
+st.caption(f"© n+p wildlife ecology | Version 4.0 | {datetime.now().strftime('%d.%m.%Y')}")

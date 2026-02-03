@@ -1,4 +1,4 @@
-import streamlit as st
+limport streamlit as st
 import pandas as pd
 import numpy as np
 import requests
@@ -158,15 +158,15 @@ except Exception as e:
 
 # --- SECTIONS INFO ---
 st.divider()
-tab1, tab2 = st.tabs(["📖 Méthodologie (Public)", "🔬 Références Scientifiques"])
+tab1, tab2 = st.tabs(["📖 Aide à la lecture", "🔬 Références Scientifiques"])
 
 with tab1:
     st.markdown("""
-    ### Aide à la lecture
+    ### 
     - **Lune** : Les symboles indiquent l'état de la lune de la nouvelle lune (🌑) à la pleine lune (🌕).
     - **Activité** : 
         - ❌ : Probabilité < 20% (Trop froid ou sec).
-        - 🐸 à 🐸🐸🐸🐸🐸 : Intensité croissante de la migration.
+        - 🐸 à 🐸🐸🐸🐸🐸 : Intensité croissante de la migration prédite.
     """)
 
 with tab2:
@@ -174,7 +174,6 @@ with tab2:
     - **Beebee (1995)** : Températures critiques.
     - **Grant (2009/2012)** : Synchronisation lunaire.
     - **Kupfer (2020)** : Stabilité thermique 72h.
-    - **Meeus (1991)** : Algorithme synodique.
     - **karch.ch** : Phénologie Suisse.
     """)
 

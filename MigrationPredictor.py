@@ -11,10 +11,11 @@ st.title("🐸 Prédiction de Migration des Batraciens (Suisse)")
 
 # Section explicative
 st.write("""
-Cet outil prédit la probabilité de migration du crapaud commun (*Bufo bufo*) durant la fenêtre du coucher du soleil. 
-Le modèle utilise les données météo d'Open-Meteo et intègre désormais le **cycle lunaire** comme accélérateur biologique.
+Cet outil prédit la probabilité de migration du crapaud commun (*Bufo bufo*) durant la "fenêtre du coucher du soleil". 
+Le modèle utilise les données météo haute résolution d'Open-Meteo, intégrant l'historique et les prévisions à 7 jours.
 
-**Calcul :** La probabilité est le produit de 6 facteurs (Mois, Pluie 8h/2h, Température 8h/2h et Lune).
+**Le Calcul :** La probabilité finale est le **produit** de six facteurs : le mois, la pluie (8h et 2h), la température (8h et 2h ressentie) et le **cycle lunaire**.
+Si un seul facteur est défavorable (ex: température < 4°C), la probabilité chute vers zéro.
 """)
 st.divider()
 
@@ -48,15 +49,14 @@ def get_linear_score(value, min_val, max_val):
     if value >= max_val: return 1.0
     return 0.1 + ((value - min_val) / (max_val - min_val)) * 0.9
 
-def calculer_facteur_lune(date):
+def get_moon_factor(date):
     # Référence : Nouvelle lune le 28 février 2025
-    ref_nouvelle_lune = datetime(2025, 2, 28)
-    cycle_lunaire = 29.53059
-    diff = (date - ref_nouvelle_lune).total_seconds() / (24 * 3600)
-    phase = (diff % cycle_lunaire) / cycle_lunaire
-    # Illumination : 0 (nouvelle lune) à 1 (pleine lune)
+    ref_new_moon = datetime(2025, 2, 28)
+    lunar_cycle = 29.53059
+    diff = (date - ref_new_moon).total_seconds() / (24 * 3600)
+    phase = (diff % lunar_cycle) / lunar_cycle
     illumination = (1 - np.cos(2 * np.pi * phase)) / 2
-    # La lune offre un boost de visibilité/activité jusqu'à +20%
+    # Boost de 20% max lors de la pleine lune
     return 1.0 + (illumination * 0.2)
 
 def get_frog_emoji(prob):
@@ -92,14 +92,13 @@ try:
                 if idx < 8: continue 
                 
                 row = df.iloc[idx]
-                dt_objet = row['time'].to_pydatetime()
+                date_dt = row['time'].to_pydatetime()
                 
                 # 1. Facteur Mois
-                m = row['time'].month
                 month_map = {1: 0.1, 2: 0.5, 3: 1.0, 4: 1.0, 5: 0.4}
-                f_month = month_map.get(m, 0.0)
+                f_month = month_map.get(row['time'].month, 0.0)
                 
-                # 2. Facteurs Pluie (Cumul 8h et 2h avant l'heure cible)
+                # 2. Facteurs Pluie (Somme 8h et 2h)
                 rain_8h = df.iloc[idx-8 : idx]['precipitation'].sum()
                 f_rain8 = 1.0 if rain_8h >= 10 else (0.1 if rain_8h == 0 else 0.1 + (rain_8h/10)*0.9)
                 
@@ -107,49 +106,50 @@ try:
                 f_rain2 = 1.0 if rain_2h >= 4 else (0.1 if rain_2h == 0 else 0.1 + (rain_2h/4)*0.9)
                 
                 # 3. Facteurs Température (Moyenne 8h et 2h ressentie)
-                t8 = df.iloc[idx-8 : idx]['temperature_2m'].mean()
-                f_temp8 = get_linear_score(t8, 4, 8)
+                temp_8h = df.iloc[idx-8 : idx]['temperature_2m'].mean()
+                f_temp8 = get_linear_score(temp_8h, 4, 8)
                 
-                felt2 = df.iloc[idx-2 : idx]['apparent_temperature'].mean()
-                f_felt2 = get_linear_score(felt2, 4, 8)
+                felt_2h = df.iloc[idx-2 : idx]['apparent_temperature'].mean()
+                f_felt2 = get_linear_score(felt_2h, 4, 8)
                 
                 # 4. Facteur Lune
-                f_moon = calculer_facteur_lune(dt_objet)
+                f_moon = get_moon_factor(date_dt)
                 
-                # Calcul Final
-                score_meteo = (f_month * f_rain8 * f_rain2 * f_temp8 * f_felt2)
-                prob_finale = int(min(100, (score_meteo * f_moon) * 100))
+                # Calcul Probabilité Finale
+                prob_meteo = (f_month * f_rain8 * f_rain2 * f_temp8 * f_felt2)
+                final_prob = int(min(100, (prob_meteo * f_moon) * 100))
                 
                 all_results.append({
-                    "Date_DT": row['time'],
+                    "Date": row['time'],
                     "Mois": f"{int(f_month*100)}%",
                     "Pluie 8h": f"{rain_8h:.1f}mm",
-                    "Temp 8h": f"{t8:.1f}°C",
-                    "Boost Lune": f"+{int((f_moon-1)*100)}%",
-                    "Prob": prob_finale,
-                    "Résumé": f"{prob_finale}% {get_frog_emoji(prob_finale)}"
+                    "Temp 8h": f"{temp_8h:.1f}°C",
+                    "Lune (Boost)": f"+{int((f_moon-1)*100)}%",
+                    "Prob": final_prob,
+                    "Résumé": f"{final_prob}% {get_frog_emoji(final_prob)}"
                 })
 
         full_df = pd.DataFrame(all_results)
-        past_df = full_df[full_df['Date_DT'].dt.date < maintenant.date()].copy()
-        future_df = full_df[full_df['Date_DT'].dt.date >= maintenant.date()].copy()
+        past_df = full_df[full_df['Date'].dt.date < maintenant.date()].copy()
+        future_df = full_df[full_df['Date'].dt.date >= maintenant.date()].copy()
 
-        # Formatage des dates
-        future_df['Date'] = future_df['Date_DT'].dt.strftime('%d %b (%a)')
-        past_df['Date'] = past_df['Date_DT'].dt.strftime('%d %b (%a)')
+        # Formatage des dates pour les tableaux
+        future_df['Date_Fr'] = future_df['Date'].dt.strftime('%d %b (%a)')
+        past_df['Date_Fr'] = past_df['Date'].dt.strftime('%d %b (%a)')
 
-        # --- AFFICHAGE ---
+        # --- AFFICHAGE PRINCIPAL ---
         st.subheader(f"🔮 Prévisions pour {nom_ville} (7 prochains jours)")
-        st.table(future_df.drop(columns=['Prob', 'Date_DT']).set_index('Date'))
+        st.table(future_df.drop(columns=['Prob', 'Date']).rename(columns={'Date_Fr': 'Date'}))
 
         st.divider()
 
         st.subheader(f"📜 Historique pour {nom_ville} (14 derniers jours)")
-        st.table(past_df.drop(columns=['Prob', 'Date_DT']).set_index('Date'))
+        st.table(past_df.drop(columns=['Prob', 'Date']).rename(columns={'Date_Fr': 'Date'}))
         
-        st.markdown("<p style='text-align: center; color: grey; margin-top: 50px;'>© n+p wildlife ecology | Données : Open-Meteo & MétéoSuisse</p>", unsafe_allow_html=True)
+        # Pied de page
+        st.markdown("<p style='text-align: center; color: grey; margin-top: 50px;'>© n+p wildlife ecology | Données : Open-Meteo</p>", unsafe_allow_html=True)
 
     else:
-        st.error("Impossible de récupérer les données météo.")
+        st.error("Erreur lors de la connexion à l'API météo.")
 except Exception as e:
-    st.error(f"Erreur technique : {e}")
+    st.error(f"Erreur Technique : {e}")

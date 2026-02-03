@@ -12,10 +12,10 @@ st.set_page_config(
 )
 
 # --- PARAMÈTRES DU MODÈLE ---
-WEIGHT_TEMP_APP    = 0.20  
-WEIGHT_STABILITY   = 0.15  
-WEIGHT_RAIN_24H    = 0.30  
-WEIGHT_HUMIDITY    = 0.20  
+WEIGHT_TEMP_APP    = 0.25  
+WEIGHT_STABILITY   = 0.20  
+WEIGHT_RAIN_8H     = 0.20  # Changé de 24h à 8h
+WEIGHT_HUMIDITY    = 0.15  
 WEIGHT_SEASON      = 0.10  
 LUNAR_BOOST_MAX    = 0.10  
 
@@ -54,8 +54,7 @@ def get_moon_phase_data(date):
     f_lunar = 1.0 + LUNAR_BOOST_MAX * np.cos(2 * np.pi * dist_from_full)
     return emoji, f_lunar
 
-def calculate_migration_probability(temp_app, temps_72h, rain_24h, rain_2h, humidity, month, f_lunar):
-    # Sécurité pour valeurs NaN
+def calculate_migration_probability(temp_app, temps_72h, rain_8h, rain_2h, humidity, month, f_lunar):
     temp_app = 0 if pd.isna(temp_app) else temp_app
     
     if temp_app < 2 or temp_app > 18: f_temp = 0.05
@@ -63,19 +62,21 @@ def calculate_migration_probability(temp_app, temps_72h, rain_24h, rain_2h, humi
         normalized = (temp_app - 2) / (18 - 2)
         f_temp = min(1.0, max(0.05, ((normalized ** 2.5) * ((1 - normalized) ** 1.5)) / 0.35))
     
-    # Nettoyage des NaN dans l'historique de température
     temps_72h = temps_72h[~np.isnan(temps_72h)]
     mean_temp = np.mean(temps_72h) if len(temps_72h) > 0 else 0
     
     f_stability = 0.1 if mean_temp < 4 else 0.5 if mean_temp < 6 else 1.0
-    f_rain = 0.15 if rain_24h < 0.5 else min(1.0, (np.log1p(rain_24h) / 3.5) * (1.3 if rain_2h > 1.0 else 1.0))
+    
+    # Sensibilité accrue pour la pluie sur 8h (seuil abaissé car fenêtre plus courte)
+    f_rain = 0.15 if rain_8h < 0.3 else min(1.0, (np.log1p(rain_8h * 2) / 3.5) * (1.3 if rain_2h > 0.8 else 1.0))
+    
     f_humidity = min(1.2, 0.6 + (humidity - 60) / 50) if humidity < 75 else min(1.2, 0.9 + (humidity - 75) / 100)
     
     seasonal_weights = {2: 0.60, 3: 1.00, 4: 0.85, 10: 0.35, 11: 0.15}
     f_season = seasonal_weights.get(month, 0.05)
     
     prob = (f_temp * WEIGHT_TEMP_APP + f_stability * WEIGHT_STABILITY + 
-            f_rain * WEIGHT_RAIN_24H + f_humidity * WEIGHT_HUMIDITY + f_season * WEIGHT_SEASON)
+            f_rain * WEIGHT_RAIN_8H + f_humidity * WEIGHT_HUMIDITY + f_season * WEIGHT_SEASON)
     
     return int(min(100, max(0, prob * f_season * f_lunar * 100)))
 
@@ -104,8 +105,6 @@ def get_weather_data(lat, lon):
         "models": "best_match"
     }
     resp = requests.get(url, params=params).json()
-    
-    # Correction 'apparent_temperature' : si absente, on la crée à partir de temperature_2m
     if 'hourly' in resp and 'apparent_temperature' not in resp['hourly']:
         resp['hourly']['apparent_temperature'] = resp['hourly']['temperature_2m']
     return resp
@@ -123,12 +122,14 @@ try:
             row = df.iloc[i]
             m_emoji, f_lunar = get_moon_phase_data(row['time'])
             
-            # Utilisation de .get() ou fallback manuel pour la sécurité
             t_app = row.get('apparent_temperature', row['temperature_2m'])
+            # Calcul de la pluie sur les 8 dernières heures (i-8 jusqu'à i)
+            rain_8h = df.iloc[i-8:i]['precipitation'].sum()
+            rain_2h = df.iloc[i-2:i]['precipitation'].sum()
             
             prob = calculate_migration_probability(
                 t_app, df.iloc[i-72:i]['temperature_2m'].values,
-                df.iloc[i-24:i]['precipitation'].sum(), df.iloc[i-2:i]['precipitation'].sum(),
+                rain_8h, rain_2h,
                 row['relative_humidity_2m'], row['time'].month, f_lunar
             )
             
@@ -136,7 +137,7 @@ try:
                 "Date": format_date_fr(row['time']), 
                 "dt_obj": row['time'].date(), 
                 "T° Ress.": f"{round(t_app, 1)}°C",
-                "Pluie 24h": f"{round(df.iloc[i-24:i]['precipitation'].sum(), 1)}mm",
+                "Pluie 8h": f"{round(rain_8h, 1)}mm", # Libellé mis à jour
                 "Lune": m_emoji, 
                 "Probab.": f"{prob}%",
                 "Activité": get_activity_icon(prob)
@@ -153,14 +154,14 @@ try:
         st.markdown(f"""
         <div style="padding:20px; border-radius:10px; border-left: 10px solid {color}; background:rgba(0,0,0,0.05); margin-bottom:20px;">
             <h2 style="margin:0; color:{color};">Ce soir : {today.iloc[0]['Probab.']} — {today.iloc[0]['Activité']}</h2>
-            <p style="margin-top:5px;">Analyse locale pour <b>{ville}</b> basée sur les modèles COSMO de MétéoSuisse.</p>
+            <p style="margin-top:5px;">Analyse locale pour <b>{ville}</b> (Pluie cumulée dès 12h00 pour le rapport de 20h00).</p>
         </div>""", unsafe_allow_html=True)
 
         if score >= 80:
-            st.error("🚨 **ALERTE MIGRATION MASSIVE** : Conditions idéales. Risque de mortalité routière élevé. Sortez les seaux et les gilets !")
+            st.error("🚨 **ALERTE MIGRATION MASSIVE** : Conditions idéales. Sortez les gilets et les seaux !")
             st.balloons()
         elif score >= 50:
-            st.warning("⚠️ **ACTIVITÉ MODÉRÉE** : Migration probable. Une surveillance des sites est recommandée.")
+            st.warning("⚠️ **ACTIVITÉ MODÉRÉE** : Migration probable.")
 
     # --- AFFICHAGE ---
     st.subheader("📅 Prévisions (7 jours)")
@@ -178,25 +179,18 @@ tab1, tab2 = st.tabs(["💡 Guide de terrain", "⚗️ Méthodologie"])
 
 with tab1:
     st.markdown("""
-    ### Comment interpréter ces indices ?
-    * **Température** : Les amphibiens sont des animaux à sang froid. Le réveil se fait vers **5°C**.
-    * **Pluviométrie** : L'humidité est vitale pour éviter la dessiccation lors du trajet.
-    * **Lune** : La luminosité influence l'orientation et l'activité (surtout pour le Crapaud commun).
-    * **Indices ❌** : Repos (trop sec/froid).
-    * **Indices 🐸 à 🐸🐸** : Migration sporadique.
-    * **Indices 🐸🐸🐸+** : Migration massive, haute vigilance requise sur les routes.
+    ### Guide d'interprétation
+    * **Pluie 8h** : Mesure les précipitations tombées entre midi et 20h. C'est le déclencheur principal de la sortie nocturne.
+    * **T° Ress.** : Température prévue à 20h. Cruciale pour le métabolisme.
+    * **Indices 🐸** : Plus il y a de grenouilles, plus la probabilité de croiser des femelles et des amplexus (couples) est forte.
     """)
 
 with tab2:
     st.markdown("""
-    ### Science & Précision
-    Ce radar utilise les données du service **Open-Meteo**, configuré pour prioriser les modèles **COSMO (MétéoSuisse)** offrant une résolution de 2km.
-    
-    **Pondération du calcul :**
-    1.  **Stabilité Thermique (72h)** : Évalue si le sol a emmagasiné assez de chaleur pour briser l'hivernation.
-    2.  **Seuils d'humidité** : L'activité s'accélère au-delà de 75% d'humidité relative.
-    3.  **Boost Lunaire** : Algorithme de Meeus (1991) pour intégrer l'influence des cycles lunaires sur le comportement.
-    4.  **Phénologie** : Le modèle restreint les probabilités hors des périodes de migration habituelles en Suisse (Février - Mai).
+    ### Paramétrage du modèle
+    * **Fenêtre de pluie** : Réduite à 8h pour capturer l'immédiateté du stimulus hydrique.
+    * **Modèle MétéoSuisse** : Utilisation du modèle COSMO via Open-Meteo pour une précision topographique optimale.
+    * **Facteurs** : Température (25%), Stabilité 72h (20%), Pluie 8h (20%), Humidité (15%), Saison (10%), Lune (10%).
     """)
 
 st.caption(f"© n+p wildlife ecology | Données : MétéoSuisse | {datetime.now().strftime('%d.%m.%Y à %H:%M')}")

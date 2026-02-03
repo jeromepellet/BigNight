@@ -1,76 +1,100 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import requests
 from datetime import datetime
 
-# Configuration
-st.set_page_config(page_title="Suivi Migration - MeteoSuisse", layout="wide")
+# Configuration de la page
+st.set_page_config(page_title="Radar Batraciens Suisse", layout="wide", page_icon="🐸")
 
-st.title("🐸 Prévision de Migration (Source: MeteoSuisse)")
-st.info("Données issues de la station officielle de Lausanne-Pully (PUY)")
+# --- PARAMÈTRES LUNAIRES ---
+# Référence : Nouvelle lune le 28 février 2025 (pour caler le cycle de 29.5 jours)
+REF_NOUVELLE_LUNE = datetime(2025, 2, 28)
+CYCLE_LUNAIRE = 29.53059
+
+# --- STATIONS MÉTÉOSUISSE ---
+STATIONS = {
+    "Aigle": "AIG", "Altdorf": "ALT", "Avenches": "AVE", "Bale-Binningen": "BAS", 
+    "Bulle": "BUL", "Berne": "BER", "Bienne": "BIE", "Château-d'Oex": "CHX",
+    "Chaux-de-Fonds (La)": "CDF", "Coire": "CHU", "Crans-Montana": "MON", 
+    "Delémont": "DEL", "Fribourg / Posieux": "FRE", "Genève / Cointrin": "GVE", 
+    "Gstaad": "GST", "Interlaken": "INT", "Lausanne / Pully": "PUY", 
+    "Montreux": "MOT", "Neuchâtel": "NEU", "Nyon": "NYO", "Payerne": "PAY", 
+    "Sion": "SIO", "St-Gall": "STG", "Vevey": "VEV", "Visp (Viège)": "VIS", 
+    "Yverdon-les-Bains": "YVE", "Zermatt": "ZER" # (Liste abrégée ici pour le code, mais extensible)
+}
 
 # --- FONCTIONS ---
-def calculer_lune(date):
-    # Nouvelle lune de référence: 28 fév 2025
-    ref_nouvelle_lune = datetime(2025, 2, 28)
-    cycle = 29.53059
-    diff = (date - ref_nouvelle_lune).total_seconds() / (24 * 3600)
-    phase = (diff % cycle) / cycle
+def calculer_illumination_lune(date):
+    """Calcule le pourcentage d'illumination de la lune (0 à 1)"""
+    diff = (date - REF_NOUVELLE_LUNE).total_seconds() / (24 * 3600)
+    phase = (diff % CYCLE_LUNAIRE) / CYCLE_LUNAIRE
     return (1 - np.cos(2 * np.pi * phase)) / 2
 
-@st.cache_data(ttl=3600)
+def get_linear_score(valeur, min_val, max_val):
+    if valeur <= min_val: return 0.1
+    if valeur >= max_val: return 1.0
+    return 0.1 + ((valeur - min_val) / (max_val - min_val)) * 0.9
+
+@st.cache_data(ttl=600)
 def charger_donnees_meteoswiss():
-    # URL des données en direct de MeteoSuisse (dernières 48h)
     url = "https://data.geo.admin.ch/ch.meteoschweiz.messwerte-aktuell/ch.meteoschweiz.messwerte-aktuell_en.csv"
-    df_raw = pd.read_csv(url, sep=';')
-    
-    # Filtrer pour la station de Pully (Lausanne)
-    df_puy = df_raw[df_raw['Station/Location'] == 'PUY'].copy()
-    return df_puy
+    try:
+        return pd.read_csv(url, sep=';')
+    except:
+        return None
 
-# --- LOGIQUE ---
-try:
-    # 1. Récupération des données réelles
-    data_puy = charger_donnees_meteoswiss()
-    
-    # Extraire les valeurs clés (Température et Précipitations)
-    # Les noms de colonnes peuvent varier selon le format MeteoSuisse actuel
-    temp_actuelle = float(data_puy['tre200s0'].values[0]) # Température de l'air 2m
-    pluie_10min = float(data_puy['rre150z0'].values[0])   # Précipitations
-    
-    # 2. Calcul du Score de Migration
-    illumination = calculer_lune(datetime.now())
-    
-    # Facteur Température (Seuil critique 4°C)
-    f_temp = min(1.0, max(0.1, (temp_actuelle - 4) / 6)) if temp_actuelle > 4 else 0.0
-    
-    # Facteur Pluie (Basé sur les dernières mesures)
-    f_pluie = 1.0 if pluie_10min > 0 else 0.1
-    
-    # Score Final avec Boost Lunaire (20%)
-    score_final = (f_temp * f_pluie * (1.0 + (illumination * 0.2))) * 100
-    score_final = min(100, score_final)
+# --- INTERFACE ---
+st.title("🐸 Radar de Migration Batraciens (Météo + Lune)")
+st.sidebar.header("Paramètres")
+ville_choisie = st.sidebar.selectbox("Station MétéoSuisse :", sorted(list(STATIONS.keys())))
+code_station = STATIONS[ville_choisie]
 
-    # --- AFFICHAGE INTERFACE ---
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Température (Pully)", f"{temp_actuelle} °C")
-    col2.metric("Pluie (Dernière mesure)", f"{pluie_10min} mm")
-    col3.metric("Illumination Lunaire", f"{round(illumination*100)} %")
+df_brut = charger_donnees_meteoswiss()
 
-    st.divider()
+if df_brut is not None:
+    try:
+        data = df_brut[df_brut['Station/Location'] == code_station].iloc[0]
+        t = float(data['tre200s0']) # Température
+        p = float(data['rre150z0']) # Pluie
+        h = float(data['ure200s0']) # Humidité
+        
+        # 1. Calcul Lune
+        maintenant = datetime.now()
+        illumination = calculer_illumination_lune(maintenant)
+        boost_lunaire = 1.0 + (illumination * 0.25) # Jusqu'à 25% de bonus si pleine lune
+        
+        # 2. Algorithme de migration
+        f_mois = {1:0.1, 2:0.5, 3:1.0, 4:1.0, 5:0.4}.get(maintenant.month, 0.0)
+        f_temp = get_linear_score(t, 4, 8)
+        f_hum = 1.0 if p > 0 else get_linear_score(h, 70, 95)
+        
+        # 3. Probabilité Finale (Météo * Boost Lune)
+        prob = int((f_mois * f_temp * f_hum * boost_lunaire) * 100)
+        prob = min(100, prob)
 
-    # Jauge de probabilité
-    st.write(f"### Probabilité actuelle de mouvement : **{round(score_final)}%**")
-    st.progress(score_final / 100)
+        # Affichage
+        st.subheader(f"Station : {ville_choisie}")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Température", f"{t} °C")
+        c2.metric("Pluie", f"{p} mm")
+        c3.metric("Humidité", f"{h} %")
+        c4.metric("Lune", f"{int(illumination*100)} %")
+        
+        st.divider()
 
-    if score_final > 75:
-        st.error("🔥 **ALERTE MIGRATION MASSIVE** : Conditions optimales réunies !")
-    elif score_final > 40:
-        st.warning("🚶 **MIGRATION MODÉRÉE** : Quelques individus actifs prévus.")
-    else:
-        st.success("💤 **CALME** : Trop froid ou trop sec pour un mouvement important.")
+        # Système de Grenouilles
+        num_frogs = max(1, min(5, (prob // 20) + 1))
+        frog_display = " ".join(["🐸" for _ in range(num_frogs)])
+        
+        st.markdown(f"<h1 style='text-align: center; font-size: 80px;'>{frog_display}</h1>", unsafe_allow_html=True)
+        
+        # Message de statut
+        if prob > 80: st.error(f"### 🚨 MIGRATION MASSIVE ({prob}%)")
+        elif prob > 50: st.warning(f"### ⚠️ MIGRATION FORTE ({prob}%)")
+        else: st.success(f"### ✅ ACTIVITÉ FAIBLE ({prob}%)")
 
-except Exception as e:
-    st.error(f"Impossible de lire les données directes de MeteoSuisse : {e}")
-    st.write("Vérifiez la connexion ou le format du fichier CSV de Geo.admin.ch")
+        st.caption(f"Données MétéoSuisse du {data['Date']} | Cycle lunaire inclus.")
+
+    except Exception as e:
+        st.error(f"Erreur de lecture : {e}")

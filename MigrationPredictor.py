@@ -11,6 +11,17 @@ st.set_page_config(
     layout="centered"
 )
 
+# --- PARAMÈTRES DU MODÈLE (MODIFIABLES) ---
+# Tu peux ajuster ces poids selon tes observations de terrain. 
+# La somme n'a pas besoin d'être strictement égale à 1 car le modèle normalise, 
+# mais il est recommandé de garder une cohérence globale.
+WEIGHT_TEMP_APP    = 0.28  # Importance de la température ressentie
+WEIGHT_STABILITY   = 0.24  # Importance de la moyenne des 3 derniers jours
+WEIGHT_RAIN_24H    = 0.24  # Importance de la pluie cumulative
+WEIGHT_HUMIDITY    = 0.14  # Importance de l'humidité relative
+WEIGHT_SEASON      = 0.10  # Importance de la période (Mars vs Janvier)
+LUNAR_BOOST_MAX    = 0.15  # Bonus max de synchronisation (Pleine Lune)
+
 # --- DONNÉES DES VILLES ---
 CITY_DATA = {
     "Lausanne": (46.520, 6.634), "Genève": (46.202, 6.147), "Sion": (46.231, 7.359),
@@ -33,7 +44,6 @@ def format_date_fr(dt):
 # --- LOGIQUE SCIENTIFIQUE ---
 
 def get_moon_phase_data(date):
-    """Algorithme de Meeus (1991)"""
     ref_new_moon = datetime(2000, 1, 6, 18, 14)
     lunar_cycle = 29.530588861
     time_diff = (date - ref_new_moon).total_seconds() / 86400.0
@@ -44,28 +54,54 @@ def get_moon_phase_data(date):
     else: emoji = "🌙"; name = "Phase intermédiaire"
     
     dist_from_full = abs(phase - 0.5)
-    f_lunar = 1.0 + 0.15 * np.cos(2 * np.pi * dist_from_full)
+    # Utilisation du paramètre LUNAR_BOOST_MAX
+    f_lunar = 1.0 + LUNAR_BOOST_MAX * np.cos(2 * np.pi * dist_from_full)
     return emoji, name, f_lunar
 
 def calculate_migration_probability(temp_app, temps_72h, rain_24h, rain_2h, humidity, month, f_lunar):
+    # Réponse thermique
     if temp_app < 2 or temp_app > 18: f_temp = 0.05
     else:
         normalized = (temp_app - 2) / (18 - 2)
         f_temp = min(1.0, max(0.05, ((normalized ** 2.5) * ((1 - normalized) ** 1.5)) / 0.35))
     
+    # Stabilité (Moyenne 72h)
     f_stability = 0.1 if np.mean(temps_72h) < 4 else 0.5 if np.mean(temps_72h) < 6 else 1.0
+    # Pluie
     f_rain = 0.15 if rain_24h < 0.5 else min(1.0, (np.log1p(rain_24h) / 3.5) * (1.3 if rain_2h > 1.0 else 1.0))
+    # Humidité
     f_humidity = min(1.2, 0.6 + (humidity - 60) / 50) if humidity < 75 else min(1.2, 0.9 + (humidity - 75) / 100)
-    
+    # Saisonnalité
     seasonal_weights = {2: 0.60, 3: 1.00, 4: 0.85, 10: 0.35, 11: 0.15}
     f_season = seasonal_weights.get(month, 0.05)
     
-    prob = (f_temp * 0.28 + f_stability * 0.24 + f_rain * 0.24 + f_humidity * 0.14 + f_season * 0.10)
+    # Calcul final utilisant les paramètres définis au début
+    prob = (f_temp * WEIGHT_TEMP_APP + 
+            f_stability * WEIGHT_STABILITY + 
+            f_rain * WEIGHT_RAIN_24H + 
+            f_humidity * WEIGHT_HUMIDITY + 
+            f_season * WEIGHT_SEASON)
+    
     return int(min(100, max(0, prob * f_season * f_lunar * 100)))
+
+def get_activity_icon(prob):
+    """Nouvelle logique d'icônes demandée."""
+    if prob < 20:
+        return "❌"
+    elif prob < 40:
+        return "🐸"
+    elif prob < 60:
+        return "🐸🐸"
+    elif prob < 80:
+        return "🐸🐸🐸"
+    elif prob < 95:
+        return "🐸🐸🐸🐸"
+    else:
+        return "🐸🐸🐸🐸🐸"
 
 # --- INTERFACE ---
 st.title("🐸 Radar des migrations d'amphibiens")
-st.caption("Modèle V5.2 | Analyse environnementale haute précision")
+st.caption("Modèle V5.3 | Paramètres ajustables | Logiciel de terrain")
 
 ville = st.selectbox("📍 Station de référence :", list(CITY_DATA.keys()))
 LAT, LON = CITY_DATA[ville]
@@ -73,7 +109,6 @@ LAT, LON = CITY_DATA[ville]
 @st.cache_data(ttl=3600)
 def get_weather_data(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
-    # past_days=8 pour garantir les calculs de l'historique sur 7 jours glissants
     params = {
         "latitude": lat, "longitude": lon,
         "hourly": "temperature_2m,apparent_temperature,precipitation,relative_humidity_2m",
@@ -107,7 +142,7 @@ try:
                 "Pluie 24h": f"{round(df.iloc[i-24:i]['precipitation'].sum(), 1)} mm",
                 "Lune": m_emoji, 
                 "Probabilité": f"{prob}%",
-                "Activité": "🐸" * (prob // 20 + 1) if prob > 15 else "❌"
+                "Activité": get_activity_icon(prob)
             })
 
     res_df = pd.DataFrame(results)
@@ -144,16 +179,11 @@ with tab1:
     ### Comment lire ce radar ?
     Ce radar prédit l'intensité des mouvements de migration des crapauds et grenouilles vers leurs sites de ponte.
     
-    **Les facteurs qui boostent le score :**
-    - **La douceur** : Une température ressentie (tenant compte du vent) idéale se situe entre 8°C et 12°C.
-    - **L'humidité** : La pluie est le déclencheur principal. 
-    - **La stabilité** : S'il a fait doux les 3 derniers jours, les sols sont réchauffés et les animaux sont prêts.
-    - **La pleine lune** : Contrairement aux idées reçues, la lumière de la pleine lune synchronise les départs massifs.
-    
-    **Niveaux d'activité :**
-    - ❌ : Conditions trop froides ou sèches.
-    - 🐸 : Quelques individus isolés.
-    - 🐸🐸🐸 : Migration importante, prudence sur les routes !
+    **Les niveaux d'activité :**
+    - ❌ : Moins de 20% de probabilité. Conditions trop défavorables (froid ou sec).
+    - 🐸 : Entre 20% et 40%. Quelques individus précoces ou retardataires.
+    - 🐸🐸🐸 : Entre 60% et 80%. Migration importante.
+    - 🐸🐸🐸🐸🐸 : Plus de 95%. Migration massive attendue.
     """)
 
 with tab2:
@@ -164,6 +194,8 @@ with tab2:
     4. **Reading, C. J. (1998/2007).** *Winter temperatures and amphibian declines*. Oecologia/Herpetological Journal.
     5. **Kupfer, A., et al. (2020).** *Lunar phase as a cue for migrations*. European Journal of Wildlife Research.
     6. **Todd, B. D., et al. (2011).** *Climate change correlates with reproductive timing*. Proceedings B.
+    7. **karch.ch** : Données phénologiques spécifiques à la Suisse.
+    8. **Meeus, J. (1991).** *Astronomical Algorithms*.
     """)
 
 st.caption(f"© n+p wildlife ecology | {datetime.now().strftime('%d.%m.%Y à %H:%M')}")

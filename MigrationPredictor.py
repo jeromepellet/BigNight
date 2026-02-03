@@ -6,15 +6,23 @@ import os
 from datetime import datetime
 from math import radians, cos, sin, asin, sqrt
 
-# --- CONFIGURATION ENVIRONNEMENT ---
-# Indispensable pour le déploiement Cloud : définit un dossier accessible en écriture
 import os
-# On crée le dossier s'il n'existe pas
-if not os.path.exists('/tmp/pgeocode_data'):
-    os.makedirs('/tmp/pgeocode_data')
+import streamlit as st
+
+# --- ÉTAPE 1 : FIX POUR STREAMLIT CLOUD ---
+# On définit le dossier de cache AVANT d'importer pgeocode
+# /tmp est le seul dossier garanti en écriture sur Streamlit Cloud
 os.environ['PGEOCODE_DATA_DIR'] = '/tmp/pgeocode_data'
 
+# On crée le dossier manuellement pour éviter tout refus de permission
+if not os.path.exists('/tmp/pgeocode_data'):
+    try:
+        os.makedirs('/tmp/pgeocode_data')
+    except Exception as e:
+        st.error(f"Erreur de création de dossier: {e}")
+
 import pgeocode
+import pandas as pd
 
 # --- CONFIGURATION PAGE ---
 st.set_page_config(

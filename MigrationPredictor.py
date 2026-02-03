@@ -135,7 +135,7 @@ try:
                 "Pluie 8h (mm)": round(r8, 1),
                 "Humidité (%)": int(h),
                 "Lune": m_emoji,
-                "Probabilité (%)": p,
+                "Probabilité": f"{p}%",
                 "Fiabilité": fiab,
                 "Activité": activity
             })
@@ -145,7 +145,7 @@ try:
     # --- DASHBOARD PRINCIPAL ---
     today_res = res_df[res_df['dt_obj'] == now_dt]
     if not today_res.empty:
-        score = today_res.iloc[0]['Probabilité (%)']
+        score_val = int(today_res.iloc[0]['Probabilité'].replace('%',''))
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("🌡️ Température", f"{today_res.iloc[0]['Temp (°C)']}°C")
         c2.metric("🌧️ Pluie (8h)", f"{today_res.iloc[0]['Pluie 8h (mm)']} mm")
@@ -153,11 +153,11 @@ try:
         _, m_emoji, m_name = get_moon_data(datetime.now())
         c4.metric(f"{m_emoji} Lune", m_name)
 
-        color = "red" if score > 70 else "orange" if score > 40 else "green"
+        color = "red" if score_val > 70 else "orange" if score_val > 40 else "green"
         st.markdown(f"""
         <div style="background-color:rgba(0,0,0,0.05); padding:20px; border-radius:10px; border-left: 10px solid {color}; margin-top:10px;">
-            <h1 style="margin:0; color:{color};">{score}% {today_res.iloc[0]['Activité']}</h1>
-            <p style="font-size:1.1em;"><b>Analyse locale :</b> {"Migration massive probable. Protection des routes recommandée." if score > 70 else "Activité modérée, restez vigilants." if score > 20 else "Conditions défavorables aux déplacements ce soir."}</p>
+            <h1 style="margin:0; color:{color};">{today_res.iloc[0]['Probabilité']} {today_res.iloc[0]['Activité']}</h1>
+            <p style="font-size:1.1em;"><b>Analyse locale :</b> {"Migration massive probable. Protection des routes recommandée." if score_val > 70 else "Activité modérée, restez vigilants." if score_val > 20 else "Conditions défavorables aux déplacements ce soir."}</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -172,7 +172,8 @@ try:
 
     with col_tab2:
         st.subheader("📜 Historique (14 jours)")
-        past = res_df[res_df['dt_obj'] < now_dt].drop(columns=['dt_obj']).iloc[::-1]
+        # Retrait de la fiabilité pour le tableau historique
+        past = res_df[res_df['dt_obj'] < now_dt].drop(columns=['dt_obj', 'Fiabilité']).iloc[::-1]
         st.dataframe(past.set_index('Date'), use_container_width=True)
 
 except Exception as e:

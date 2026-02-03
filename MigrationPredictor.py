@@ -45,7 +45,6 @@ def calculate_prob(temp, rain_8h, rain_2h, month, illum):
 # --- INTERFACE HAUT DE PAGE ---
 st.title("🐸 Radar de Migration des Batraciens")
 
-# Choix de la ville en haut au lieu de la sidebar
 col_v1, col_v2 = st.columns([1, 2])
 with col_v1:
     ville = st.selectbox("📍 Sélectionner une localité :", list(CITY_DATA.keys()))
@@ -68,7 +67,7 @@ try:
     df['time'] = pd.to_datetime(df['time'])
     
     results = []
-    TARGET_HOUR = 20 # Fixé à 20h pour le bilan nocturne
+    TARGET_HOUR = 20 
     
     for i in range(len(df)):
         if df.iloc[i]['time'].hour == TARGET_HOUR:
@@ -78,16 +77,23 @@ try:
             illum, m_emoji, m_name = get_moon_data(row['time'])
             p = calculate_prob(t, r8, r2, m, illum)
             
-            # Système de grenouilles (1 pour 20%)
-            nb_frogs = max(1, p // 20) if p > 5 else 0
+            # Système d'icônes : Croix si <= 20%, sinon 1 à 5 grenouilles
+            if p <= 20:
+                activity = "❌"
+            else:
+                # Calcul : 21-40=1, 41-60=2, 61-80=3, 81-99=4, 100=5
+                nb_frogs = min(5, (p // 20))
+                if p % 20 == 0 and nb_frogs > 0: nb_frogs = nb_frogs # Ajustement paliers
+                activity = "🐸" * max(1, nb_frogs)
+
             results.append({
                 "Date": row['time'],
                 "Temp (°C)": round(t, 1),
                 "Pluie 8h (mm)": round(r8, 1),
                 "Humidité (%)": int(h),
                 "Lune": m_emoji,
-                "Probabilité": p,
-                "Activité": "🐸" * nb_frogs if nb_frogs > 0 else "❌"
+                "Probabilité (%)": p,
+                "Activité": activity
             })
 
     res_df = pd.DataFrame(results)
@@ -96,7 +102,7 @@ try:
     # --- DASHBOARD DU SOIR ---
     today_res = res_df[res_df['Date'].dt.date == now_dt]
     if not today_res.empty:
-        score = today_res.iloc[0]['Probabilité']
+        score = today_res.iloc[0]['Probabilité (%)']
         st.divider()
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("🌡️ Température", f"{today_res.iloc[0]['Temp (°C)']}°C")
@@ -108,7 +114,7 @@ try:
         color = "red" if score > 70 else "orange" if score > 40 else "green"
         st.markdown(f"""<div style="background-color:rgba(0,0,0,0.05); padding:20px; border-radius:10px; border-left: 10px solid {color}; margin-top:10px;">
             <h1 style="margin:0; color:{color};">{score}% {today_res.iloc[0]['Activité']}</h1>
-            <p style="font-size:1.1em;"><b>Conseil :</b> {"Migration massive prévue. Redoublez de prudence !" if score > 70 else "Conditions favorables pour quelques sorties." if score > 40 else "Calme plat attendu ce soir."}</p>
+            <p style="font-size:1.1em;"><b>Bilan :</b> {"Conditions critiques pour une migration massive." if score > 70 else "Activité modérée, route potentiellement fréquentée." if score > 20 else "Peu de risques de rencontre ce soir."}</p>
         </div>""", unsafe_allow_html=True)
 
     # --- TABLES PREVISIONS ET HISTORIQUE ---

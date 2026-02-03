@@ -88,7 +88,7 @@ def get_activity_icon(prob):
 
 # --- INTERFACE ---
 st.title("🐸 Radar des migrations d'amphibiens")
-st.caption("Modèle V5.5 | Température ressentie & Cycle lunaire synodique")
+st.caption("Modèle V5.6 | Analyse environnementale haute précision")
 
 ville = st.selectbox("📍 Station de référence :", list(CITY_DATA.keys()))
 LAT, LON = CITY_DATA[ville]
@@ -96,10 +96,11 @@ LAT, LON = CITY_DATA[ville]
 @st.cache_data(ttl=3600)
 def get_weather_data(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
+    # Augmenté past_days à 10 pour garantir les 72h de stabilité sur tout l'historique
     params = {
         "latitude": lat, "longitude": lon,
         "hourly": "temperature_2m,apparent_temperature,precipitation,relative_humidity_2m",
-        "timezone": "Europe/Berlin", "past_days": 8, "forecast_days": 8
+        "timezone": "Europe/Berlin", "past_days": 10, "forecast_days": 8
     }
     return requests.get(url, params=params).json()
 
@@ -145,7 +146,7 @@ try:
             <p style="margin-top:5px;">Analyse météo de 20h00 pour {ville}.</p>
         </div>""", unsafe_allow_html=True)
 
-    # --- AFFICHAGE VERTICAL ---
+    # --- AFFICHAGE ---
     st.subheader("📅 Prévisions (7 jours)")
     st.table(res_df[res_df['dt_obj'] >= now_dt].head(7).drop(columns=['dt_obj']).set_index('Date'))
 
@@ -164,21 +165,17 @@ with tab1:
     ### Aide à la lecture
     - **Lune** : Les symboles indiquent l'état de la lune de la nouvelle lune (🌑) à la pleine lune (🌕).
     - **Activité** : 
-        - ❌ : Repos (Probabilité < 20%)
-        - 🐸 : Activité faible à modérée
-        - 🐸🐸🐸🐸🐸 : Activité maximale / Pic de migration
+        - ❌ : Probabilité < 20% (Trop froid ou sec).
+        - 🐸 à 🐸🐸🐸🐸🐸 : Intensité croissante de la migration.
     """)
-    
-
-[Image of the moon phases diagram]
-
 
 with tab2:
     st.markdown("""
     - **Beebee (1995)** : Températures critiques.
     - **Grant (2009/2012)** : Synchronisation lunaire.
     - **Kupfer (2020)** : Stabilité thermique 72h.
-    - **Meeus (1991)** : Algorithme de calcul synodique.
+    - **Meeus (1991)** : Algorithme synodique.
+    - **karch.ch** : Phénologie Suisse.
     """)
 
 st.caption(f"© n+p wildlife ecology | {datetime.now().strftime('%d.%m.%Y à %H:%M')}")

@@ -12,12 +12,12 @@ st.set_page_config(
 )
 
 # --- PARAMÈTRES DU MODÈLE ---
-WEIGHT_TEMP_APP    = 0.25  
-WEIGHT_STABILITY   = 0.20  
-WEIGHT_RAIN_8H     = 0.20  # Changé de 24h à 8h
-WEIGHT_HUMIDITY    = 0.15  
-WEIGHT_SEASON      = 0.10  
-LUNAR_BOOST_MAX    = 0.10  
+WEIGHT_TEMP_APP    = 0.30  
+WEIGHT_STABILITY   = 0.10  
+WEIGHT_RAIN_8H     = 0.30 
+WEIGHT_HUMIDITY    = 0.20  
+WEIGHT_SEASON      = 0.05  
+LUNAR_BOOST_MAX    = 0.05  
 
 CITY_DATA = {
     "Lausanne": (46.520, 6.634), "Genève": (46.202, 6.147), "Sion": (46.231, 7.359),

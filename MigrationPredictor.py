@@ -20,7 +20,6 @@ CITY_DATA = {
     "Martigny": (46.103, 7.073), "Sierre": (46.292, 7.532), "Morges": (46.509, 6.498)
 }
 
-# Traduction des jours pour les tableaux
 DAYS_FR = {
     "Mon": "Lun", "Tue": "Mar", "Wed": "Mer", "Thu": "Jeu", 
     "Fri": "Ven", "Sat": "Sam", "Sun": "Dim"
@@ -50,6 +49,19 @@ def calculate_prob(temp, rain_8h, rain_2h, month, illum):
 
 # --- INTERFACE ---
 st.title("🐸 Radar de Migration des Batraciens")
+
+# --- SECTION EXPLICATIVE ---
+st.markdown("""
+### 💡 Comment ça marche ?
+Cet outil analyse quatre facteurs clés pour prédire si les crapauds et grenouilles vont se déplacer ce soir :
+* **La Température** : Ils s'activent dès **4°C**, avec un idéal autour de **10°C**. Trop froid, ils gèlent ; trop chaud, ils s'assèchent.
+* **L'Humidité** : La pluie est le déclencheur principal. Une peau humide est vitale pour leur survie durant le trajet.
+* **La Saison** : Le gros de la migration a lieu entre **février et avril**. En dehors de ces périodes, les mouvements sont rares.
+* **La Lune** : Les nuits sombres (nouvelle lune) sont souvent préférées pour éviter les prédateurs et mieux s'orienter.
+
+*Le score de probabilité combine ces données pour vous aider à anticiper les pics de migration sur les routes.*
+""")
+st.divider()
 
 col_v1, col_v2 = st.columns([1, 2])
 with col_v1:
@@ -82,14 +94,12 @@ try:
             illum, m_emoji, m_name = get_moon_data(row['time'])
             p = calculate_prob(t, r8, r2, m, illum)
             
-            # Logique d'icônes
             if p <= 20:
                 activity = "❌"
             else:
                 nb_frogs = min(5, (p // 20))
                 activity = "🐸" * max(1, nb_frogs)
 
-            # Formatage de la date en français
             date_en = row['time'].strftime('%a %d %b')
             for en, fr in DAYS_FR.items():
                 date_en = date_en.replace(en, fr)
@@ -112,7 +122,6 @@ try:
     today_res = res_df[res_df['dt_obj'] == now_dt]
     if not today_res.empty:
         score = today_res.iloc[0]['Probabilité (%)']
-        st.divider()
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("🌡️ Température", f"{today_res.iloc[0]['Temp (°C)']}°C")
         c2.metric("🌧️ Pluie (8h)", f"{today_res.iloc[0]['Pluie 8h (mm)']} mm")
@@ -123,7 +132,7 @@ try:
         color = "red" if score > 70 else "orange" if score > 40 else "green"
         st.markdown(f"""<div style="background-color:rgba(0,0,0,0.05); padding:20px; border-radius:10px; border-left: 10px solid {color}; margin-top:10px;">
             <h1 style="margin:0; color:{color};">{score}% {today_res.iloc[0]['Activité']}</h1>
-            <p style="font-size:1.1em;"><b>Analyse :</b> {"Migration massive probable. Attention sur les routes !" if score > 70 else "Activité modérée attendue." if score > 20 else "Peu de mouvements prévus ce soir."}</p>
+            <p style="font-size:1.1em;"><b>Analyse :</b> {"Conditions critiques pour une migration massive." if score > 70 else "Activité modérée attendue." if score > 20 else "Peu de mouvements prévus ce soir."}</p>
         </div>""", unsafe_allow_html=True)
 
     # --- TABLES ---

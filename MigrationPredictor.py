@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(
@@ -55,12 +55,19 @@ def get_moon_phase_data(date):
     return emoji, f_lunar
 
 def calculate_migration_probability(temp_app, temps_72h, rain_24h, rain_2h, humidity, month, f_lunar):
+    # Sécurité pour valeurs NaN
+    temp_app = 0 if pd.isna(temp_app) else temp_app
+    
     if temp_app < 2 or temp_app > 18: f_temp = 0.05
     else:
         normalized = (temp_app - 2) / (18 - 2)
         f_temp = min(1.0, max(0.05, ((normalized ** 2.5) * ((1 - normalized) ** 1.5)) / 0.35))
     
-    f_stability = 0.1 if np.mean(temps_72h) < 4 else 0.5 if np.mean(temps_72h) < 6 else 1.0
+    # Nettoyage des NaN dans l'historique de température
+    temps_72h = temps_72h[~np.isnan(temps_72h)]
+    mean_temp = np.mean(temps_72h) if len(temps_72h) > 0 else 0
+    
+    f_stability = 0.1 if mean_temp < 4 else 0.5 if mean_temp < 6 else 1.0
     f_rain = 0.15 if rain_24h < 0.5 else min(1.0, (np.log1p(rain_24h) / 3.5) * (1.3 if rain_2h > 1.0 else 1.0))
     f_humidity = min(1.2, 0.6 + (humidity - 60) / 50) if humidity < 75 else min(1.2, 0.9 + (humidity - 75) / 100)
     
@@ -82,7 +89,7 @@ def get_activity_icon(prob):
 
 # --- INTERFACE ---
 st.title("🐸 Radar des migrations d'amphibiens en Suisse")
-st.caption("Modèle prédictif basé sur les données haute résolution de MétéoSuisse")
+st.caption("Modèle prédictif basé sur les données haute résolution de MétéoSuisse (COSMO)")
 
 ville = st.selectbox("📍 Station de référence :", list(CITY_DATA.keys()))
 LAT, LON = CITY_DATA[ville]
@@ -90,14 +97,18 @@ LAT, LON = CITY_DATA[ville]
 @st.cache_data(ttl=3600)
 def get_weather_data(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
-    # Utilisation du modèle haute résolution de MétéoSuisse (COSMO)
     params = {
         "latitude": lat, "longitude": lon,
         "hourly": "temperature_2m,apparent_temperature,precipitation,relative_humidity_2m",
         "timezone": "Europe/Berlin", "past_days": 10, "forecast_days": 8,
-        "models": "meteofrance_seamless,icon_seamless,best_match" # "best_match" inclut les données locales optimisées
+        "models": "best_match"
     }
-    return requests.get(url, params=params).json()
+    resp = requests.get(url, params=params).json()
+    
+    # Correction 'apparent_temperature' : si absente, on la crée à partir de temperature_2m
+    if 'hourly' in resp and 'apparent_temperature' not in resp['hourly']:
+        resp['hourly']['apparent_temperature'] = resp['hourly']['temperature_2m']
+    return resp
 
 try:
     weather = get_weather_data(LAT, LON)
@@ -112,8 +123,11 @@ try:
             row = df.iloc[i]
             m_emoji, f_lunar = get_moon_phase_data(row['time'])
             
+            # Utilisation de .get() ou fallback manuel pour la sécurité
+            t_app = row.get('apparent_temperature', row['temperature_2m'])
+            
             prob = calculate_migration_probability(
-                row['apparent_temperature'], df.iloc[i-72:i]['temperature_2m'].values,
+                t_app, df.iloc[i-72:i]['temperature_2m'].values,
                 df.iloc[i-24:i]['precipitation'].sum(), df.iloc[i-2:i]['precipitation'].sum(),
                 row['relative_humidity_2m'], row['time'].month, f_lunar
             )
@@ -121,7 +135,7 @@ try:
             results.append({
                 "Date": format_date_fr(row['time']), 
                 "dt_obj": row['time'].date(), 
-                "T° Ress.": f"{round(row['apparent_temperature'], 1)}°C",
+                "T° Ress.": f"{round(t_app, 1)}°C",
                 "Pluie 24h": f"{round(df.iloc[i-24:i]['precipitation'].sum(), 1)}mm",
                 "Lune": m_emoji, 
                 "Probab.": f"{prob}%",
@@ -139,17 +153,16 @@ try:
         st.markdown(f"""
         <div style="padding:20px; border-radius:10px; border-left: 10px solid {color}; background:rgba(0,0,0,0.05); margin-bottom:20px;">
             <h2 style="margin:0; color:{color};">Ce soir : {today.iloc[0]['Probab.']} — {today.iloc[0]['Activité']}</h2>
-            <p style="margin-top:5px;">Analyse météo locale (modèles suisses) pour {ville}.</p>
+            <p style="margin-top:5px;">Analyse locale pour <b>{ville}</b> basée sur les modèles COSMO de MétéoSuisse.</p>
         </div>""", unsafe_allow_html=True)
 
-        # ALERTE SEUIL
         if score >= 80:
-            st.error("🚨 **ALERTE MIGRATION MASSIVE** : Les conditions sont optimales. Risque élevé de mortalité routière. Installez les dispositifs de sauvetage !")
+            st.error("🚨 **ALERTE MIGRATION MASSIVE** : Conditions idéales. Risque de mortalité routière élevé. Sortez les seaux et les gilets !")
             st.balloons()
         elif score >= 50:
-            st.warning("⚠️ **ACTIVITÉ MODÉRÉE** : Migration probable. Une surveillance des sites sensibles est recommandée dès la tombée de la nuit.")
+            st.warning("⚠️ **ACTIVITÉ MODÉRÉE** : Migration probable. Une surveillance des sites est recommandée.")
 
-    # --- AFFICHAGE DES TABLEAUX ---
+    # --- AFFICHAGE ---
     st.subheader("📅 Prévisions (7 jours)")
     st.table(res_df[res_df['dt_obj'] >= now_dt].head(7).drop(columns=['dt_obj']).set_index('Date'))
 
@@ -159,31 +172,31 @@ try:
 except Exception as e:
     st.error(f"Erreur technique : {e}")
 
-# --- SECTIONS INFO AMÉLIORÉES ---
+# --- SECTIONS INFO ---
 st.divider()
 tab1, tab2 = st.tabs(["💡 Guide de terrain", "⚗️ Méthodologie"])
 
 with tab1:
     st.markdown("""
     ### Comment interpréter ces indices ?
-    * **Température (T° Ress.)** : Les amphibiens s'activent au-dessus de **5°C**. En dessous de 2°C, le risque de gel bloque tout mouvement.
-    * **Pluviométrie** : Une pluie fine et continue est plus favorable qu'un orage violent. L'indice prend en compte le cumul sur 24h.
-    * **Lune** : Une lune croissante ou pleine (🌕) booste souvent la migration si l'humidité est suffisante.
-    * **Activité ❌** : Conditions hostiles (sec ou trop froid).
-    * **Activité 🐸 à 🐸🐸** : Quelques individus pionniers (souvent les mâles).
-    * **Activité 🐸🐸🐸+** : Migration de masse (femelles et couples en amplexus).
+    * **Température** : Les amphibiens sont des animaux à sang froid. Le réveil se fait vers **5°C**.
+    * **Pluviométrie** : L'humidité est vitale pour éviter la dessiccation lors du trajet.
+    * **Lune** : La luminosité influence l'orientation et l'activité (surtout pour le Crapaud commun).
+    * **Indices ❌** : Repos (trop sec/froid).
+    * **Indices 🐸 à 🐸🐸** : Migration sporadique.
+    * **Indices 🐸🐸🐸+** : Migration massive, haute vigilance requise sur les routes.
     """)
 
 with tab2:
     st.markdown("""
-    ### Précision du modèle
-    Ce radar utilise les données du service **Open-Meteo**, configuré pour prioriser les modèles **COSMO (MétéoSuisse)** et **ICON (DWD)**, offrant une résolution de 2km sur le territoire suisse.
+    ### Science & Précision
+    Ce radar utilise les données du service **Open-Meteo**, configuré pour prioriser les modèles **COSMO (MétéoSuisse)** offrant une résolution de 2km.
     
-    **Variables pondérées :**
-    1.  **Stabilité 72h** : Analyse si le sol a eu le temps de se réchauffer.
-    2.  **Humidité relative** : Seuil critique à 75%.
-    3.  **Facteur Lunaire** : Ajustement selon la luminosité nocturne (influence prouvée sur *Bufo bufo*).
-    4.  **Fenêtre Saisonnière** : Le modèle est calibré spécifiquement pour la phénologie des espèces suisses (Grenouille rousse, Crapaud commun, Tritons).
+    **Pondération du calcul :**
+    1.  **Stabilité Thermique (72h)** : Évalue si le sol a emmagasiné assez de chaleur pour briser l'hivernation.
+    2.  **Seuils d'humidité** : L'activité s'accélère au-delà de 75% d'humidité relative.
+    3.  **Boost Lunaire** : Algorithme de Meeus (1991) pour intégrer l'influence des cycles lunaires sur le comportement.
+    4.  **Phénologie** : Le modèle restreint les probabilités hors des périodes de migration habituelles en Suisse (Février - Mai).
     """)
 
-st.caption(f"© n+p wildlife ecology | Données : MétéoSuisse via Open-Meteo | {datetime.now().strftime('%d.%m.%Y à %H:%M')}")
+st.caption(f"© n+p wildlife ecology | Données : MétéoSuisse | {datetime.now().strftime('%d.%m.%Y à %H:%M')}")

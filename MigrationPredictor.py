@@ -57,14 +57,14 @@ def calculate_prob(temp_ressentie, rain_8h, rain_2h, month, illum):
     return int(min(100, max(0, (f_month * f_temp * f_rain * f_lune) * 100)))
 
 # --- INTERFACE UTILISATEUR ---
-st.title("🐸 Radar des migrations d'amphibiens")
+st.title("🐸 Radar des migrations d'amphibiens en Suisse")
 
 st.markdown("""
 ### 💡 Comment ça marche ?
 Cet outil analyse les conditions environnementales critiques pour les amphibiens en croisant les données de **MétéoSuisse** :
-* **Température Ressentie** : Le facteur clé. Contrairement à la température de l'air, elle inclut l'effet du **vent (Bise)**. Un vent sec bloque la migration par risque de dessiccation.
+* **Température ressentie** : Le facteur clé. Contrairement à la température de l'air, elle inclut l'effet du **vent (Bise)**. Un vent sec bloque la migration par risque de dessiccation.
 * **Humidité cumulative** : L'algorithme scanne les pluies cumulées **8h avant** la tombée de la nuit pour évaluer la saturation du sol.
-* **Luminosité & Cycle** : Intègre les phases de la lune et la période biologique (février-avril).
+* **Luminosité & Cycle** : Intègre les phases de la lune et la période biologique.
 
 📡 *Les données sont actualisées toutes les heures pour la station la plus proche de la localité choisie.*
 """)
@@ -144,17 +144,17 @@ try:
         prob_str = today_res.iloc[0]['Probabilité']
         score = int(prob_str.replace('%',''))
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("🌡️ Temp. Ressentie", f"{today_res.iloc[0]['Ressenti (°C)']}°C", f"Air: {today_res.iloc[0]['Air (°C)']}°C")
-        c2.metric("🌧️ Pluie (8h)", f"{today_res.iloc[0]['Pluie 8h (mm)']} mm")
-        c3.metric("💧 Humidité", f"{today_res.iloc[0]['Humidité (%)']}%")
+        c1.metric("🌡️ Temp. ressentie", f"{today_res.iloc[0]['Ressenti (°C)']}°C", f"Air: {today_res.iloc[0]['Air (°C)']}°C")
+        c2.metric("🌧️ Pluie cumulée sur 8h", f"{today_res.iloc[0]['Pluie 8h (mm)']} mm")
+        c3.metric("💧 Humidité relative", f"{today_res.iloc[0]['Humidité (%)']}%")
         _, m_emoji, m_name = get_moon_data(datetime.now())
-        c4.metric(f"{m_emoji} Lune", m_name)
+        c4.metric(f"{m_emoji} Phase de la lune", m_name)
 
         color = "red" if score > 70 else "orange" if score > 40 else "green"
         st.markdown(f"""
         <div style="background-color:rgba(0,0,0,0.05); padding:20px; border-radius:10px; border-left: 10px solid {color}; margin-top:10px;">
             <h1 style="margin:0; color:{color};">{prob_str} {today_res.iloc[0]['Activité']}</h1>
-            <p style="font-size:1.1em;"><b>Expertise Herpétologique :</b> {"Migration massive probable. Conditions optimales." if score > 70 else "Activité modérée, restez vigilants sur les routes." if score > 20 else "Conditions défavorables (froid, vent sec ou hors saison)."}</p>
+            <p style="font-size:1.1em;"><b>Bilan :</b> {"Migration massive probable. Conditions optimales." if score > 70 else "Activité modérée, restez vigilants sur les routes." if score > 20 else "Conditions défavorables."}</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -163,12 +163,12 @@ try:
     col_tab1, col_tab2 = st.columns(2)
     
     with col_tab1:
-        st.subheader("📅 Prévisions (7 jours)")
+        st.subheader("📅 Prévisions à 7 jours")
         future = res_df[res_df['dt_obj'] >= now_dt].drop(columns=['dt_obj'])
         st.dataframe(future.set_index('Date'), use_container_width=True)
 
     with col_tab2:
-        st.subheader("📜 Historique (14 jours)")
+        st.subheader("📜 Historique des 2 dernières semaines")
         past = res_df[res_df['dt_obj'] < now_dt].drop(columns=['dt_obj', 'Fiabilité']).iloc[::-1]
         st.dataframe(past.set_index('Date'), use_container_width=True)
 

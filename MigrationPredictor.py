@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 # --- CONFIGURATION ---
 st.set_page_config(
-    page_title="Radar Batraciens Pro", 
+    page_title="Radar des migrations d'amphibiens", 
     page_icon="🐸", 
     layout="wide"
 )
@@ -48,7 +48,7 @@ def calculate_prob(temp, rain_8h, rain_2h, month, illum):
     return int(min(100, max(0, (f_month * f_temp * f_rain * f_lune) * 100)))
 
 # --- INTERFACE ---
-st.title("🐸 Radar de Migration des Batraciens")
+st.title("🐸 Radar des migrations d'amphibiens")
 
 # --- SECTION EXPLICATIVE ---
 st.markdown("""

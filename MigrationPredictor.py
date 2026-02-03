@@ -20,6 +20,12 @@ CITY_DATA = {
     "Martigny": (46.103, 7.073), "Sierre": (46.292, 7.532), "Morges": (46.509, 6.498)
 }
 
+# Traduction des jours pour les tableaux
+DAYS_FR = {
+    "Mon": "Lun", "Tue": "Mar", "Wed": "Mer", "Thu": "Jeu", 
+    "Fri": "Ven", "Sat": "Sam", "Sun": "Dim"
+}
+
 # --- LOGIQUE SCIENTIFIQUE ---
 def get_moon_data(date):
     ref_new_moon = datetime(2025, 2, 28)
@@ -42,7 +48,7 @@ def calculate_prob(temp, rain_8h, rain_2h, month, illum):
     f_lune = 1.15 if illum < 0.3 else (0.95 if illum > 0.7 else 1.0)
     return int(min(100, max(0, (f_month * f_temp * f_rain * f_lune) * 100)))
 
-# --- INTERFACE HAUT DE PAGE ---
+# --- INTERFACE ---
 st.title("🐸 Radar de Migration des Batraciens")
 
 col_v1, col_v2 = st.columns([1, 2])
@@ -50,7 +56,6 @@ with col_v1:
     ville = st.selectbox("📍 Sélectionner une localité :", list(CITY_DATA.keys()))
     LAT, LON = CITY_DATA[ville]
 
-# --- RÉCUPÉRATION DES DONNÉES ---
 @st.cache_data(ttl=3600)
 def get_weather_data(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
@@ -77,17 +82,21 @@ try:
             illum, m_emoji, m_name = get_moon_data(row['time'])
             p = calculate_prob(t, r8, r2, m, illum)
             
-            # Système d'icônes : Croix si <= 20%, sinon 1 à 5 grenouilles
+            # Logique d'icônes
             if p <= 20:
                 activity = "❌"
             else:
-                # Calcul : 21-40=1, 41-60=2, 61-80=3, 81-99=4, 100=5
                 nb_frogs = min(5, (p // 20))
-                if p % 20 == 0 and nb_frogs > 0: nb_frogs = nb_frogs # Ajustement paliers
                 activity = "🐸" * max(1, nb_frogs)
 
+            # Formatage de la date en français
+            date_en = row['time'].strftime('%a %d %b')
+            for en, fr in DAYS_FR.items():
+                date_en = date_en.replace(en, fr)
+
             results.append({
-                "Date": row['time'],
+                "Date": date_en,
+                "dt_obj": row['time'].date(),
                 "Temp (°C)": round(t, 1),
                 "Pluie 8h (mm)": round(r8, 1),
                 "Humidité (%)": int(h),
@@ -99,8 +108,8 @@ try:
     res_df = pd.DataFrame(results)
     now_dt = datetime.now().date()
     
-    # --- DASHBOARD DU SOIR ---
-    today_res = res_df[res_df['Date'].dt.date == now_dt]
+    # --- DASHBOARD ---
+    today_res = res_df[res_df['dt_obj'] == now_dt]
     if not today_res.empty:
         score = today_res.iloc[0]['Probabilité (%)']
         st.divider()
@@ -114,27 +123,25 @@ try:
         color = "red" if score > 70 else "orange" if score > 40 else "green"
         st.markdown(f"""<div style="background-color:rgba(0,0,0,0.05); padding:20px; border-radius:10px; border-left: 10px solid {color}; margin-top:10px;">
             <h1 style="margin:0; color:{color};">{score}% {today_res.iloc[0]['Activité']}</h1>
-            <p style="font-size:1.1em;"><b>Bilan :</b> {"Conditions critiques pour une migration massive." if score > 70 else "Activité modérée, route potentiellement fréquentée." if score > 20 else "Peu de risques de rencontre ce soir."}</p>
+            <p style="font-size:1.1em;"><b>Analyse :</b> {"Migration massive probable. Attention sur les routes !" if score > 70 else "Activité modérée attendue." if score > 20 else "Peu de mouvements prévus ce soir."}</p>
         </div>""", unsafe_allow_html=True)
 
-    # --- TABLES PREVISIONS ET HISTORIQUE ---
+    # --- TABLES ---
     st.divider()
     col_tab1, col_tab2 = st.columns(2)
     
     with col_tab1:
         st.subheader("📅 Prévisions (7 jours)")
-        future = res_df[res_df['Date'].dt.date >= now_dt].copy()
-        future['Date'] = future['Date'].dt.strftime('%a %d %b')
+        future = res_df[res_df['dt_obj'] >= now_dt].drop(columns=['dt_obj'])
         st.dataframe(future.set_index('Date'), use_container_width=True)
 
     with col_tab2:
         st.subheader("📜 Historique (14 jours)")
-        past = res_df[res_df['Date'].dt.date < now_dt].copy().sort_values('Date', ascending=False)
-        past['Date'] = past['Date'].dt.strftime('%a %d %b')
+        past = res_df[res_df['dt_obj'] < now_dt].drop(columns=['dt_obj']).iloc[::-1]
         st.dataframe(past.set_index('Date'), use_container_width=True)
 
 except Exception as e:
     st.error(f"Erreur technique : {e}")
 
 st.divider()
-st.caption(f"© n+p wildlife ecology | Données actualisées le {datetime.now().strftime('%d.%m.%Y à %H:%M')}")
+st.caption(f"© n+p wildlife ecology | Actualisé le {datetime.now().strftime('%d.%m.%Y à %H:%M')}")

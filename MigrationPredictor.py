@@ -1,5 +1,5 @@
 import streamlit as st
-import pandas as pd  # Correction de l'importation
+import pandas as pd
 import numpy as np
 import requests
 from datetime import datetime, timedelta
@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 st.set_page_config(
     page_title="Radar des migrations d'amphibiens", 
     page_icon="🐸", 
-    layout="wide"
+    layout="centered"
 )
 
 # --- DONNÉES DES VILLES ---
@@ -33,6 +33,7 @@ def format_date_fr(dt):
 # --- LOGIQUE SCIENTIFIQUE ---
 
 def get_moon_phase_data(date):
+    """Algorithme de Meeus (1991)"""
     ref_new_moon = datetime(2000, 1, 6, 18, 14)
     lunar_cycle = 29.530588861
     time_diff = (date - ref_new_moon).total_seconds() / 86400.0
@@ -64,7 +65,7 @@ def calculate_migration_probability(temp_app, temps_72h, rain_24h, rain_2h, humi
 
 # --- INTERFACE ---
 st.title("🐸 Radar des migrations d'amphibiens")
-st.caption("Modèle prédictif V5.1 | Station météo 20h00 | Bibliographie Grant & Beebee")
+st.caption("Modèle V5.2 | Analyse environnementale haute précision")
 
 ville = st.selectbox("📍 Station de référence :", list(CITY_DATA.keys()))
 LAT, LON = CITY_DATA[ville]
@@ -72,11 +73,11 @@ LAT, LON = CITY_DATA[ville]
 @st.cache_data(ttl=3600)
 def get_weather_data(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
-    # past_days=7 pour l'historique, forecast_days=8 pour inclure aujourd'hui + 7 jours
+    # past_days=8 pour garantir les calculs de l'historique sur 7 jours glissants
     params = {
         "latitude": lat, "longitude": lon,
         "hourly": "temperature_2m,apparent_temperature,precipitation,relative_humidity_2m",
-        "timezone": "Europe/Berlin", "past_days": 7, "forecast_days": 8
+        "timezone": "Europe/Berlin", "past_days": 8, "forecast_days": 8
     }
     return requests.get(url, params=params).json()
 
@@ -122,35 +123,47 @@ try:
             <p style="margin-top:5px;">Indice calculé pour le début de nuit (20h00) à {ville}.</p>
         </div>""", unsafe_allow_html=True)
 
-    # --- TABLEAUX FIXES À 7 LIGNES ---
-    st.divider()
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("📅 Prévisions (7 jours)")
-        # Aujourd'hui + 6 prochains jours = 7 lignes
-        future_df = res_df[res_df['dt_obj'] >= now_dt].head(7)
-        st.table(future_df.drop(columns=['dt_obj']).set_index('Date'))
-    with c2:
-        st.subheader("📜 Historique (7 jours)")
-        # Les 7 jours passés stricts
-        past_df = res_df[res_df['dt_obj'] < now_dt].tail(7).iloc[::-1]
-        st.table(past_df.drop(columns=['dt_obj']).set_index('Date'))
+    # --- AFFICHAGE VERTICAL ---
+    st.subheader("📅 Prévisions (7 jours)")
+    future_df = res_df[res_df['dt_obj'] >= now_dt].head(7)
+    st.table(future_df.drop(columns=['dt_obj']).set_index('Date'))
+
+    st.subheader("📜 Historique (7 jours)")
+    past_df = res_df[res_df['dt_obj'] < now_dt].tail(7).iloc[::-1]
+    st.table(past_df.drop(columns=['dt_obj']).set_index('Date'))
 
 except Exception as e:
-    st.error(f"Erreur de flux météo : {e}")
+    st.error(f"Erreur technique : {e}")
 
-# --- MÉTHODOLOGIE & BIBLIO ---
+# --- SECTIONS INFO ---
 st.divider()
-with st.expander("🔬 Méthodologie & Références"):
+tab1, tab2 = st.tabs(["📖 Méthodologie (Public)", "🔬 Références Scientifiques"])
+
+with tab1:
     st.markdown("""
-    **Modèle V5.1** : Intègre la température ressentie, la stabilité sur 72h et la synchronisation lunaire (Grant et al., 2009).
+    ### Comment lire ce radar ?
+    Ce radar prédit l'intensité des mouvements de migration des crapauds et grenouilles vers leurs sites de ponte.
     
-    1. **Beebee (1995)** : Seuils de température.
-    2. **Grant (2009/2012)** : Effets lunaires et synchronisation des anoures.
-    3. **Reading (1998/2007)** : Phénologie et humidité relative.
-    4. **Kupfer (2020)** : Stabilité thermique 72h.
-    5. **Todd (2011)** : Corrélation précipitations.
-    6. **Meeus (1991)** : Algorithme astronomique pour la lune.
+    **Les facteurs qui boostent le score :**
+    - **La douceur** : Une température ressentie (tenant compte du vent) idéale se situe entre 8°C et 12°C.
+    - **L'humidité** : La pluie est le déclencheur principal. 
+    - **La stabilité** : S'il a fait doux les 3 derniers jours, les sols sont réchauffés et les animaux sont prêts.
+    - **La pleine lune** : Contrairement aux idées reçues, la lumière de la pleine lune synchronise les départs massifs.
+    
+    **Niveaux d'activité :**
+    - ❌ : Conditions trop froides ou sèches.
+    - 🐸 : Quelques individus isolés.
+    - 🐸🐸🐸 : Migration importante, prudence sur les routes !
+    """)
+
+with tab2:
+    st.markdown("""
+    1. **Beebee, T. J. C. (1995).** *Amphibian breeding and climate*. Nature.
+    2. **Grant, R. A., et al. (2009).** *The lunar cycle: a cue for amphibian reproductive phenology?* Animal Behaviour.
+    3. **Grant, R., et al. (2012).** *Amphibians' response to the lunar synodic cycle*. Behavioral Ecology.
+    4. **Reading, C. J. (1998/2007).** *Winter temperatures and amphibian declines*. Oecologia/Herpetological Journal.
+    5. **Kupfer, A., et al. (2020).** *Lunar phase as a cue for migrations*. European Journal of Wildlife Research.
+    6. **Todd, B. D., et al. (2011).** *Climate change correlates with reproductive timing*. Proceedings B.
     """)
 
 st.caption(f"© n+p wildlife ecology | {datetime.now().strftime('%d.%m.%Y à %H:%M')}")

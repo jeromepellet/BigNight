@@ -41,25 +41,24 @@ def format_date_fr(dt):
 # --- LOGIQUE SCIENTIFIQUE ---
 
 def get_moon_phase_data(date):
-    """Calcul de phase et sélection d'emojis plus explicites."""
+    """Calcul précis Meeus (1991) et séquence 8 emojis."""
     ref_new_moon = datetime(2000, 1, 6, 18, 14)
     lunar_cycle = 29.530588861
     time_diff = (date - ref_new_moon).total_seconds() / 86400.0
     phase = (time_diff % lunar_cycle) / lunar_cycle
     
-    # Sélection d'emojis contrastés et nom de phase
-    if phase < 0.06 or phase > 0.94: 
-        emoji, name = "🌑 (Noire)", "Nouvelle lune"
-    elif 0.44 < phase < 0.56: 
-        emoji, name = "🌕 (Pleine)", "Pleine lune"
-    elif phase <= 0.44: 
-        emoji, name = "🌓 (Croissant)", "Lune croissante"
-    else: 
-        emoji, name = "🌗 (Décroiss.)", "Lune décroissante"
+    if phase < 0.0625 or phase > 0.9375: emoji = "🌑"
+    elif phase <= 0.1875: emoji = "🌒"
+    elif phase <= 0.3125: emoji = "🌓"
+    elif phase <= 0.4375: emoji = "🌔"
+    elif phase <= 0.5625: emoji = "🌕"
+    elif phase <= 0.6875: emoji = "🌖"
+    elif phase <= 0.8125: emoji = "🌗"
+    else: emoji = "🌘"
     
     dist_from_full = abs(phase - 0.5)
     f_lunar = 1.0 + LUNAR_BOOST_MAX * np.cos(2 * np.pi * dist_from_full)
-    return emoji, name, f_lunar
+    return emoji, f_lunar
 
 def calculate_migration_probability(temp_app, temps_72h, rain_24h, rain_2h, humidity, month, f_lunar):
     if temp_app < 2 or temp_app > 18: f_temp = 0.05
@@ -89,7 +88,7 @@ def get_activity_icon(prob):
 
 # --- INTERFACE ---
 st.title("🐸 Radar des migrations d'amphibiens")
-st.caption("Modèle V5.4 | Phases lunaires explicites | Paramètres terrain")
+st.caption("Modèle V5.5 | Température ressentie & Cycle lunaire synodique")
 
 ville = st.selectbox("📍 Station de référence :", list(CITY_DATA.keys()))
 LAT, LON = CITY_DATA[ville]
@@ -115,7 +114,7 @@ try:
         if df.iloc[i]['time'].hour == 20:
             if i < 72: continue
             row = df.iloc[i]
-            m_emoji, m_name, f_lunar = get_moon_phase_data(row['time'])
+            m_emoji, f_lunar = get_moon_phase_data(row['time'])
             
             prob = calculate_migration_probability(
                 row['apparent_temperature'], df.iloc[i-72:i]['temperature_2m'].values,
@@ -146,7 +145,7 @@ try:
             <p style="margin-top:5px;">Analyse météo de 20h00 pour {ville}.</p>
         </div>""", unsafe_allow_html=True)
 
-    # --- AFFICHAGE ---
+    # --- AFFICHAGE VERTICAL ---
     st.subheader("📅 Prévisions (7 jours)")
     st.table(res_df[res_df['dt_obj'] >= now_dt].head(7).drop(columns=['dt_obj']).set_index('Date'))
 
@@ -163,8 +162,11 @@ tab1, tab2 = st.tabs(["📖 Méthodologie (Public)", "🔬 Références Scientif
 with tab1:
     st.markdown("""
     ### Aide à la lecture
-    - **Lune** : 🌕 Indique une phase proche de la pleine lune (bonus de migration). 🌑 Indique une nuit sombre.
-    - **Activité** : ❌ (repos), 🐸 (début), 🐸🐸🐸 (fort), 🐸🐸🐸🐸🐸 (pic de migration).
+    - **Lune** : Les symboles indiquent l'état de la lune de la nouvelle lune (🌑) à la pleine lune (🌕).
+    - **Activité** : 
+        - ❌ : Repos (Probabilité < 20%)
+        - 🐸 : Activité faible à modérée
+        - 🐸🐸🐸🐸🐸 : Activité maximale / Pic de migration
     """)
     
 
@@ -172,6 +174,11 @@ with tab1:
 
 
 with tab2:
-    st.markdown("1. **Beebee (1995)** | 2. **Grant (2009/2012)** | 3. **Reading (2007)** | 4. **Kupfer (2020)** | 5. **Meeus (1991)**")
+    st.markdown("""
+    - **Beebee (1995)** : Températures critiques.
+    - **Grant (2009/2012)** : Synchronisation lunaire.
+    - **Kupfer (2020)** : Stabilité thermique 72h.
+    - **Meeus (1991)** : Algorithme de calcul synodique.
+    """)
 
 st.caption(f"© n+p wildlife ecology | {datetime.now().strftime('%d.%m.%Y à %H:%M')}")

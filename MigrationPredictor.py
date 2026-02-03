@@ -56,7 +56,10 @@ def get_moon_phase_data(date):
 
 def calculate_migration_probability(temp_app, temps_72h, rain_8h, rain_2h, humidity, month, f_lunar):
     temp_app = 0 if pd.isna(temp_app) else temp_app
-    if temp_app < 2 or temp_app > 18: f_temp = 0.05
+    
+    # 1. CALCUL DE LA BASE (Pondération classique)
+    if temp_app < 2 or temp_app > 20: 
+        f_temp = 0.05
     else:
         normalized = (temp_app - 2) / (18 - 2)
         f_temp = min(1.0, max(0.05, ((normalized ** 2.5) * ((1 - normalized) ** 1.5)) / 0.35))
@@ -65,16 +68,28 @@ def calculate_migration_probability(temp_app, temps_72h, rain_8h, rain_2h, humid
     mean_temp = np.mean(temps_72h) if len(temps_72h) > 0 else 0
     f_stability = 0.1 if mean_temp < 4 else 0.5 if mean_temp < 6 else 1.0
     
-    f_rain = 0.15 if rain_8h < 0.3 else min(1.0, (np.log1p(rain_8h * 2) / 3.5) * (1.3 if rain_2h > 0.8 else 1.0))
-    f_humidity = min(1.2, 0.6 + (humidity - 60) / 50) if humidity < 75 else min(1.2, 0.9 + (humidity - 75) / 100)
+    f_rain = 0.10 if rain_8h < 0.2 else min(1.0, (np.log1p(rain_8h * 2) / 3.5))
+    f_humidity = min(1.0, (humidity / 90) ** 2) # Courbe exponentielle pour l'humidité
     
-    seasonal_weights = {2: 0.60, 3: 1.00, 4: 0.85, 10: 0.35, 11: 0.15}
+    seasonal_weights = {2: 0.50, 3: 1.00, 4: 0.85, 10: 0.30}
     f_season = seasonal_weights.get(month, 0.05)
     
+    # SCORE INITIAL
     prob = (f_temp * WEIGHT_TEMP_APP + f_stability * WEIGHT_STABILITY + 
             f_rain * WEIGHT_RAIN_8H + f_humidity * WEIGHT_HUMIDITY + f_season * WEIGHT_SEASON)
     
-    return int(min(100, max(0, prob * f_season * f_lunar * 100)))
+    score = prob * f_season * f_lunar * 100
+
+    # 2. APPLICATION DES FACTEURS LIMITANTS (Coupe-circuits)
+    # Si T° < 5°C : La probabilité chute de 70% (Léthargie)
+    if temp_app < 5.0:
+        score *= 0.3
+        
+    # Si pas de pluie ( < 0.3mm) ET humidité < 80% : Migration bloquée
+    if rain_8h < 0.3 and humidity < 80:
+        score *= 0.2
+        
+    return int(min(100, max(0, score)))
 
 def get_activity_icon(prob):
     if prob < 20: return "❌"

@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime
+from streamlit_js_eval import get_geolocation # Installation: pip install streamlit-js-eval
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(
@@ -20,10 +21,7 @@ CITY_DATA = {
     "Martigny": (46.103, 7.073), "Sierre": (46.292, 7.532), "Morges": (46.509, 6.498)
 }
 
-DAYS_FR = {
-    "Mon": "Lun", "Tue": "Mar", "Wed": "Mer", "Thu": "Jeu", 
-    "Fri": "Ven", "Sat": "Sam", "Sun": "Dim"
-}
+DAYS_FR = {"Mon": "Lun", "Tue": "Mar", "Wed": "Mer", "Thu": "Jeu", "Fri": "Ven", "Sat": "Sam", "Sun": "Dim"}
 
 # --- LOGIQUE SCIENTIFIQUE ---
 def get_moon_data(date):
@@ -32,57 +30,51 @@ def get_moon_data(date):
     diff = (date - ref_new_moon).total_seconds() / (24 * 3600)
     phase = (diff % lunar_cycle) / lunar_cycle
     illumination = (1 - np.cos(2 * np.pi * phase)) / 2
-    if phase < 0.06 or phase > 0.94: emoji, name = "🌑", "Nouvelle lune"
-    elif phase < 0.5: emoji, name = "🌓", "Lune croissante"
-    elif phase < 0.56: emoji, name = "🌕", "Pleine lune"
-    else: emoji, name = "🌗", "Lune décroissante"
+    emoji = "🌑" if phase < 0.06 or phase > 0.94 else "🌓" if phase < 0.5 else "🌕" if phase < 0.56 else "🌗"
+    name = "Nouvelle lune" if emoji == "🌑" else "Lune croissante" if emoji == "🌓" else "Pleine lune" if emoji == "🌕" else "Lune décroissante"
     return illumination, emoji, name
 
 def calculate_prob(temp_ressentie, rain_8h, rain_2h, month, illum):
-    # Facteur saisonnier (Phénologie)
     seasonal = {1: 0.1, 2: 0.7, 3: 1.0, 4: 0.9, 5: 0.3, 10: 0.4, 11: 0.2}
     f_month = seasonal.get(month, 0.05)
-    
-    # Courbe de Gauss basée sur la température RESSENTIE (plus réaliste face au vent/bise)
-    # L'optimum reste 10°C, mais le vent réduit drastiquement le score
     f_temp = np.exp(-0.5 * ((temp_ressentie - 10) / 4) ** 2) if 4 <= temp_ressentie <= 20 else (0.1 if temp_ressentie > 20 else 0)
-    
-    # Influence de la pluie
     rain_total = rain_8h + rain_2h
     f_rain = min(1.0, 0.2 + (rain_total * 0.2)) if rain_total > 0 else 0.2
-    
-    # Influence de la luminosité lunaire
     f_lune = 1.15 if illum < 0.3 else (0.95 if illum > 0.7 else 1.0)
-    
     return int(min(100, max(0, (f_month * f_temp * f_rain * f_lune) * 100)))
 
-# --- INTERFACE UTILISATEUR ---
-st.title("🐸 Radar des migrations d'amphibiens en Suisse")
+def find_closest_city(lat, lon):
+    distances = {name: np.sqrt((lat-c[0])**2 + (lon-c[1])**2) for name, c in CITY_DATA.items()}
+    return min(distances, key=distances.get)
 
-st.markdown("""
-### 💡 Comment ça marche ?
-Cet outil analyse les conditions environnementales critiques pour les amphibiens en croisant les données de **MétéoSuisse** :
-* **Température ressentie** : Le facteur clé. Contrairement à la température de l'air, elle inclut l'effet du **vent (Bise)**. Un vent sec bloque la migration par risque de dessiccation.
-* **Humidité cumulative** : L'algorithme scanne les pluies cumulées **8h avant** la tombée de la nuit pour évaluer la saturation du sol.
-* **Luminosité & Cycle** : Intègre les phases de la lune et la période biologique.
+# --- (i) SÉLECTION DE LA VILLE & GPS ---
+st.title("🐸 Radar des migrations d'amphibiens")
 
-📡 *Les données sont actualisées toutes les heures pour la station la plus proche de la localité choisie.*
-""")
-st.divider()
+if 'selected_city' not in st.session_state:
+    st.session_state['selected_city'] = "Lausanne"
 
-col_sel1, col_sel2 = st.columns([1, 2])
-with col_sel1:
-    ville = st.selectbox("📍 Sélectionner une localité :", list(CITY_DATA.keys()))
+col_gps1, col_gps2 = st.columns([2, 1])
+with col_gps1:
+    ville = st.selectbox("📍 Localité :", list(CITY_DATA.keys()), 
+                         index=list(CITY_DATA.keys()).index(st.session_state['selected_city']))
     LAT, LON = CITY_DATA[ville]
+with col_gps2:
+    st.write("") # Espacement
+    if st.button("🛰️ Me géolocaliser"):
+        loc = get_geolocation()
+        if loc:
+            lat, lon = loc['coords']['latitude'], loc['coords']['longitude']
+            st.session_state['selected_city'] = find_closest_city(lat, lon)
+            st.rerun()
 
+# --- RÉCUPÉRATION DONNÉES ---
 @st.cache_data(ttl=3600)
 def get_weather_data(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat, "longitude": lon,
         "hourly": "temperature_2m,apparent_temperature,precipitation,relative_humidity_2m",
-        "timezone": "Europe/Berlin", "past_days": 14, "forecast_days": 8,
-        "models": "best_match"
+        "timezone": "Europe/Berlin", "past_days": 14, "forecast_days": 8, "models": "best_match"
     }
     return requests.get(url, params=params).json()
 
@@ -90,90 +82,76 @@ try:
     data = get_weather_data(LAT, LON)
     df = pd.DataFrame(data['hourly'])
     df['time'] = pd.to_datetime(df['time'])
-    
     results = []
-    TARGET_HOUR = 20 
+    TARGET_HOUR = 20
     now_dt = datetime.now().date()
-    
+
     for i in range(len(df)):
         if df.iloc[i]['time'].hour == TARGET_HOUR:
             if i < 8: continue
             row = df.iloc[i]
-            
-            t_air = row['temperature_2m']
-            t_ressentie = row['apparent_temperature']
+            t_air, t_res = row['temperature_2m'], row['apparent_temperature']
             r8 = df.iloc[i-8:i]['precipitation'].sum()
             r2 = df.iloc[i-2:i]['precipitation'].sum()
-            h = row['relative_humidity_2m']
-            m = row['time'].month
+            h, m = row['relative_humidity_2m'], row['time'].month
             illum, m_emoji, m_name = get_moon_data(row['time'])
+            p = calculate_prob(t_res, r8, r2, m, illum)
             
-            # Utilisation de la température RESSENTIE pour la probabilité
-            p = calculate_prob(t_ressentie, r8, r2, m, illum)
-            
-            if p <= 20: activity = "❌"
-            else: activity = "🐸" * min(5, max(1, p // 20))
-
+            activity = "❌" if p <= 20 else "🐸" * min(5, max(1, p // 20))
             diff_jours = (row['time'].date() - now_dt).days
-            if diff_jours <= 0: fiab = "100%"
-            elif diff_jours <= 2: fiab = "90%"
-            elif diff_jours <= 4: fiab = "70%"
-            else: fiab = "50%"
-
-            date_en = row['time'].strftime('%a %d %b')
-            for en, fr in DAYS_FR.items(): date_en = date_en.replace(en, fr)
+            fiab = "100%" if diff_jours <= 0 else "90%" if diff_jours <= 2 else "70%" if diff_jours <= 4 else "50%"
+            
+            date_fr = row['time'].strftime('%a %d %b')
+            for en, fr in DAYS_FR.items(): date_fr = date_fr.replace(en, fr)
 
             results.append({
-                "Date": date_en,
-                "dt_obj": row['time'].date(),
-                "Air (°C)": round(t_air, 1),
-                "Ressenti (°C)": round(t_ressentie, 1),
-                "Pluie 8h (mm)": round(r8, 1),
-                "Humidité (%)": int(h),
-                "Lune": m_emoji,
-                "Probabilité": f"{p}%",
-                "Fiabilité": fiab,
-                "Activité": activity
+                "Date": date_fr, "dt_obj": row['time'].date(), "Air (°C)": round(t_air, 1),
+                "Ressenti (°C)": round(t_res, 1), "Pluie 8h (mm)": round(r8, 1),
+                "Humidité (%)": int(h), "Lune": m_emoji, "Probabilité": f"{p}%",
+                "Fiabilité": fiab, "Activité": activity
             })
 
     res_df = pd.DataFrame(results)
-    
-    # --- DASHBOARD PRINCIPAL ---
+
+    # --- (ii) BILAN POUR CETTE NUIT (DASHBOARD) ---
     today_res = res_df[res_df['dt_obj'] == now_dt]
     if not today_res.empty:
-        prob_str = today_res.iloc[0]['Probabilité']
-        score = int(prob_str.replace('%',''))
+        score = int(today_res.iloc[0]['Probabilité'].replace('%',''))
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("🌡️ Temp. ressentie", f"{today_res.iloc[0]['Ressenti (°C)']}°C", f"Air: {today_res.iloc[0]['Air (°C)']}°C")
-        c2.metric("🌧️ Pluie cumulée sur 8h", f"{today_res.iloc[0]['Pluie 8h (mm)']} mm")
-        c3.metric("💧 Humidité relative", f"{today_res.iloc[0]['Humidité (%)']}%")
+        c1.metric("🌡️ Ressenti", f"{today_res.iloc[0]['Ressenti (°C)']}°C")
+        c2.metric("🌧️ Pluie (8h)", f"{today_res.iloc[0]['Pluie 8h (mm)']} mm")
+        c3.metric("💧 Humidité", f"{today_res.iloc[0]['Humidité (%)']}%")
         _, m_emoji, m_name = get_moon_data(datetime.now())
-        c4.metric(f"{m_emoji} Phase de la lune", m_name)
+        c4.metric(f"{m_emoji} Lune", m_name)
 
         color = "red" if score > 70 else "orange" if score > 40 else "green"
         st.markdown(f"""
-        <div style="background-color:rgba(0,0,0,0.05); padding:20px; border-radius:10px; border-left: 10px solid {color}; margin-top:10px;">
-            <h1 style="margin:0; color:{color};">{prob_str} {today_res.iloc[0]['Activité']}</h1>
-            <p style="font-size:1.1em;"><b>Bilan :</b> {"Migration massive probable. Conditions optimales." if score > 70 else "Activité modérée, restez vigilants sur les routes." if score > 20 else "Conditions défavorables."}</p>
+        <div style="background-color:rgba(0,0,0,0.05); padding:20px; border-radius:10px; border-left: 10px solid {color}; margin-top:10px; margin-bottom:20px;">
+            <h1 style="margin:0; color:{color};">{today_res.iloc[0]['Probabilité']} {today_res.iloc[0]['Activité']}</h1>
+            <p style="font-size:1.1em;"><b>Analyse locale :</b> {"Migration massive probable. Protection des routes recommandée." if score > 70 else "Activité modérée, restez vigilants." if score > 20 else "Conditions défavorables ce soir."}</p>
         </div>
         """, unsafe_allow_html=True)
 
-    # --- TABLES DES DONNÉES ---
+    # --- (iii) TABLEAUX ---
     st.divider()
     col_tab1, col_tab2 = st.columns(2)
-    
     with col_tab1:
-        st.subheader("📅 Prévisions à 7 jours")
-        future = res_df[res_df['dt_obj'] >= now_dt].drop(columns=['dt_obj'])
-        st.dataframe(future.set_index('Date'), use_container_width=True)
-
+        st.subheader("📅 Prévisions (7 jours)")
+        st.dataframe(res_df[res_df['dt_obj'] >= now_dt].drop(columns=['dt_obj']).set_index('Date'), use_container_width=True)
     with col_tab2:
-        st.subheader("📜 Historique des 2 dernières semaines")
-        past = res_df[res_df['dt_obj'] < now_dt].drop(columns=['dt_obj', 'Fiabilité']).iloc[::-1]
-        st.dataframe(past.set_index('Date'), use_container_width=True)
+        st.subheader("📜 Historique (14 jours)")
+        st.dataframe(res_df[res_df['dt_obj'] < now_dt].drop(columns=['dt_obj', 'Fiabilité']).iloc[::-1].set_index('Date'), use_container_width=True)
 
 except Exception as e:
-    st.error(f"Erreur lors de la récupération des données : {e}")
+    st.error(f"Erreur de connexion : {e}")
 
+# --- (iv) EXPLICATION & COPYRIGHT ---
 st.divider()
-st.caption(f"© n+p wildlife ecology | Source : MétéoSuisse (Modèles haute résolution) | Actualisé le {datetime.now().strftime('%d.%m.%Y à %H:%M')}")
+with st.expander("💡 Comment fonctionne ce radar ?", expanded=False):
+    st.markdown("""
+    Cet outil prédit les pics de migration en analysant les données de **MétéoSuisse** (modèles COSMO haute résolution) :
+    * **Température Ressentie** : Le facteur clé. Intègre l'effet de la **Bise** (vent sec) qui bloque la migration par risque de dessiccation.
+    * **Humidité cumulative** : Analyse des précipitations **8h avant** la tombée de la nuit pour évaluer la saturation du sol.
+    * **Phénologie & Lune** : Pondère le score selon le mois (pic en mars) et la luminosité nocturne.
+    """)
+st.caption(f"© n+p wildlife ecology | Source : MétéoSuisse | Actualisé le {datetime.now().strftime('%d.%m.%Y à %H:%M')}")

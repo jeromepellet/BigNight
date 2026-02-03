@@ -1,156 +1,93 @@
-import os
 import streamlit as st
-
-# --- ÉTAPE 1 : CONFIGURATION ENVIRONNEMENT (DOIT ÊTRE AU DÉBUT) ---
-# On définit le dossier de cache AVANT d'importer pgeocode
-os.environ['PGEOCODE_DATA_DIR'] = '/tmp/pgeocode_data'
-
-if not os.path.exists('/tmp/pgeocode_data'):
-    try:
-        os.makedirs('/tmp/pgeocode_data')
-    except Exception as e:
-        # Note: st.error ne s'affichera que si l'app arrive à charger l'UI
-        print(f"Erreur dossier: {e}") 
-
-# --- ÉTAPE 2 : IMPORTS DES LIBRAIRIES ---
-import pgeocode
 import pandas as pd
 import numpy as np
 import requests
 from datetime import datetime
-from math import radians, cos, sin, asin, sqrt
 
-# --- ÉTAPE 3 : CONFIGURATION PAGE ---
-st.set_page_config(
-    page_title="Radar Batraciens Live", 
-    page_icon="🐸", 
-    layout="wide"
-)
+# --- CONFIGURATION PAGE ---
+st.set_page_config(page_title="Radar Batraciens", page_icon="🐸", layout="wide")
 
-# --- CONSTANTES ---
-# Dictionnaire des stations : Nom -> (Lat, Lon, ID MétéoSuisse)
-STATIONS_METEO = {
-    "Lausanne-Pully": (46.5119, 6.6672, "PUY"),
-    "Genève-Cointrin": (46.2330, 6.1090, "GVE"),
-    "Sion": (46.2187, 7.3303, "SIO"),
-    "Neuchâtel": (46.9907, 6.9356, "NEU"),
-    "Fribourg-Posieux": (46.7718, 7.1038, "FRE"),
-    "Payerne": (46.8115, 6.9423, "PAY"),
-    "Aigle": (46.3193, 6.9248, "AIG"),
-    "Chaux-de-Fonds": (47.0837, 6.7925, "CDF")
+# --- DONNÉES FIXES (Remplace pgeocode) ---
+# Format: "Nom Ville": (Latitude, Longitude, ID_Station_MeteoSuisse)
+VILLES_SUISSES = {
+    "Lausanne": (46.516, 6.632, "PUY"),
+    "Genève": (46.204, 6.143, "GVE"),
+    "Sion": (46.229, 7.359, "SIO"),
+    "Neuchâtel": (46.991, 6.931, "NEU"),
+    "Fribourg": (46.806, 7.161, "FRE"),
+    "Payerne": (46.820, 6.937, "PAY"),
+    "Aigle": (46.315, 6.965, "AIG"),
+    "La Chaux-de-Fonds": (47.103, 6.832, "CDF"),
+    "Berne": (46.948, 7.447, "BER"),
+    "Lugano": (46.003, 8.951, "LUG")
 }
-
-# --- LOGIQUE DE GÉOLOCALISATION ---
-@st.cache_resource
-def get_geocoder():
-    """Initialise le moteur de recherche de codes postaux."""
-    return pgeocode.Nominatim('ch')
-
-def haversine(lat1, lon1, lat2, lon2):
-    """Calcule la distance en km entre deux points (formule de Haversine)."""
-    R = 6371  # Rayon de la Terre en km
-    dLat = radians(lat2 - lat1)
-    dLon = radians(lon2 - lon1)
-    lat1, lat2 = radians(lat1), radians(lat2)
-    a = sin(dLat/2)**2 + cos(lat1)*cos(lat2)*sin(dLon/2)**2
-    c = 2*asin(sqrt(a))
-    return R * c
-
-def find_nearest_station(user_lat, user_lon):
-    """Associe les coordonnées de l'utilisateur à la station la plus proche."""
-    best_station = None
-    min_dist = float('inf')
-    
-    for name, (s_lat, s_lon, s_id) in STATIONS_METEO.items():
-        d = haversine(user_lat, user_lon, s_lat, s_lon)
-        if d < min_dist:
-            min_dist = d
-            best_station = {"id": s_id, "name": name, "dist": d}
-    return best_station
 
 # --- RÉCUPÉRATION MÉTÉO ---
 @st.cache_data(ttl=600)
-def fetch_meteoswiss_data():
-    """Récupère les données live de MétéoSuisse."""
+def fetch_meteo_live():
     url = "https://data.geo.admin.ch/ch.meteoschweiz.messwerte-aktuell/ch.meteoschweiz.messwerte-aktuell_en.csv"
     try:
         df = pd.read_csv(url, sep=';')
         return df
     except Exception as e:
-        st.error(f"Erreur de connexion MétéoSuisse: {e}")
+        st.error(f"Erreur de connexion MétéoSuisse : {e}")
         return None
 
-# --- CALCUL PROBABILITÉ (Modèle simplifié) ---
-def get_migration_score(temp, rain, humidity):
-    score = 0
-    # Température optimale entre 7 et 12 degrés
-    if 5 <= temp <= 15: score += 40
-    # Pluie ou forte humidité
-    if rain > 0: score += 40
-    elif humidity > 80: score += 30
-    # Saison (Mars/Avril)
-    month = datetime.now().month
-    if month in [3, 4]: score += 20
-    return min(100, score)
+# --- INTERFACE ---
+st.title("🐸 Radar de Migration des Batraciens")
+st.markdown("Prévisions basées sur les données en temps réel de MétéoSuisse.")
 
-# --- INTERFACE UTILISATEUR ---
-def main():
-    st.title("🐸 Radar Batraciens Suisse")
-    st.markdown("---")
+with st.sidebar:
+    st.header("📍 Localisation")
+    choix_ville = st.selectbox("Sélectionnez votre ville :", list(VILLES_SUISSES.keys()))
+    lat, lon, station_id = VILLES_SUISSES[choix_ville]
+    st.info(f"Station MétéoSuisse : **{station_id}**")
 
-    with st.sidebar:
-        st.header("📍 Localisation")
-        npa = st.text_input("Entrez votre NPA (ex: 1000, 1200)", value="1000")
-        
-        nomi = get_geocoder()
-        location_data = nomi.query_postal_code(npa)
-        
-        if pd.isna(location_data.latitude):
-            st.error("NPA non trouvé.")
-            st.stop()
-        
-        st.success(f"Ville détectée : **{location_data.place_name}**")
-        
-        # Trouver la station la plus proche
-        station = find_nearest_station(location_data.latitude, location_data.longitude)
-        st.info(f"Station la plus proche : **{station['name']}** ({station['dist']:.1f} km)")
+# Récupération des données
+df_meteo = fetch_meteo_live()
 
-    # Récupération des données météo
-    df_meteo = fetch_meteoswiss_data()
+if df_meteo is not None:
+    # On cherche la ligne correspondant à la station
+    data_station = df_meteo[df_meteo['Station/Location'] == station_id]
     
-    if df_meteo is not None:
-        # Filtrage pour la station sélectionnée
-        row = df_meteo[df_meteo['Station/Location'] == station['id']]
-        
-        if not row.empty:
-            # Extraction des valeurs (MétéoSuisse : tre200s0=temp, rre150z0=précip, ure200s0=hum)
-            temp = float(row['tre200s0'].values[0])
-            rain = float(row['rre150z0'].values[0])
-            hum = float(row['ure200s0'].values[0])
+    if not data_station.empty:
+        # tre200s0 = Température, rre150z0 = Précipitations, ure200s0 = Humidité
+        try:
+            temp = float(data_station['tre200s0'].iloc[0])
+            pluie = float(data_station['rre150z0'].iloc[0])
+            humi = float(data_station['ure200s0'].iloc[0])
             
-            # Calcul du score
-            prob = get_migration_score(temp, rain, hum)
+            # Calcul du score de migration simplifié
+            score = 0
+            if 5 <= temp <= 13: score += 40
+            if pluie > 0: score += 40
+            elif humi > 80: score += 30
             
-            # Affichage des métriques
+            # Affichage
             col1, col2, col3 = st.columns(3)
             col1.metric("🌡️ Température", f"{temp} °C")
-            col2.metric("🌧️ Pluie (10 min)", f"{rain} mm")
-            col3.metric("💧 Humidité", f"{hum} %")
+            col2.metric("🌧️ Pluie (10 min)", f"{pluie} mm")
+            col3.metric("💧 Humidité", f"{humi} %")
             
-            st.markdown("---")
+            st.divider()
             
-            # Affichage de la probabilité
-            st.subheader("Estimation du risque de migration")
-            color = "green" if prob < 30 else "orange" if prob < 70 else "red"
-            st.markdown(f"<h1 style='color:{color}; text-align:center;'>{prob}%</h1>", unsafe_allow_html=True)
-            st.progress(prob / 100)
+            # Résultat
+            st.subheader("Probabilité de migration")
+            couleur = "red" if score > 70 else "orange" if score > 30 else "green"
+            st.markdown(f"<h1 style='text-align:center; color:{couleur};'>{score}%</h1>", unsafe_allow_html=True)
+            st.progress(score / 100)
             
-            if prob > 70:
-                st.warning("⚠️ **ALERTE :** Risque de migration massif. Soyez vigilants sur les routes près des zones humides !")
+            if score > 70:
+                st.error("🚨 **Conditions optimales !** Migration massive probable ce soir.")
+            elif score > 30:
+                st.warning("⚠️ **Activité possible.** Quelques déplacements à prévoir.")
             else:
-                st.info("Conditions calmes pour le moment.")
-        else:
-            st.warning(f"La station {station['id']} ne transmet pas de données actuellement.")
+                st.success("💤 **Calme.** Trop sec ou trop froid pour une migration majeure.")
+                
+        except Exception as e:
+            st.warning("Certaines données météo sont manquantes pour cette station.")
+    else:
+        st.error("La station sélectionnée ne répond pas.")
 
-if __name__ == "__main__":
-    main()
+st.divider()
+st.caption(f"Dernière mise à jour : {datetime.now().strftime('%H:%M:%S')}")

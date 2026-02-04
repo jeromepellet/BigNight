@@ -34,21 +34,15 @@ def get_lunar_factor_binary(dt):
     return 1.0 if (0.43 < phase < 0.57) else 0.0
 
 def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_curr, month, dt):
-    # Normalisation des facteurs (0.0 à 1.0)
     f_feel_2h = min(1.0, max(0, (feel_2h - 3) / 10))
     f_temp_8h = min(1.0, max(0, (temp_8h_avg - 3) / 10))
     f_rain_8h = min(1.0, rain_8h_total / 3.0)
-    
-    # Règle rain_curr : monte de 0 à 1, saturation dès 3mm/h
     f_rain_curr = min(1.0, rain_curr / 3.0)
-    
     f_lune = get_lunar_factor_binary(dt)
     
-    # Saisonnalité adaptée selon tes instructions
     seasonal_map = {1: 0.8, 2: 0.9, 3: 1.0, 4: 0.8, 9: 0.7, 10: 0.7}
     f_season = seasonal_map.get(month, 0.01)
     
-    # Équation de pondération finale
     score = (
         f_season    * W_SEASON + 
         f_temp_8h   * W_TEMP_8H + 
@@ -58,7 +52,6 @@ def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_cu
         f_lune      * W_LUNAR
     ) * 100
 
-    # Kill-switch froid : arrêt total si ressenti < 1°C
     if feel_2h < 1.0:
         score = 0
 
@@ -70,10 +63,10 @@ def get_label(prob):
     if prob < 75: return "Migration modérée", "🐸🐸", "#2ECC71"
     return "Forte migration attendue", "🐸🐸🐸🐸", "#1E8449"
 
-# --- 3. INTERFACE UTILISATEUR ---
+# --- 3. INTERFACE ---
 
 st.title("🐸 Radar Migration Amphibiens")
-st.caption("Données sources : MétéoSuisse (Modèle ICON-CH 1km)")
+st.caption("Modèle : MétéoSuisse ICON-CH (1.1km) + Équation Lunaire")
 
 ville = st.selectbox("📍 Sélectionner une station météo :", list(CITY_DATA.keys()))
 LAT, LON = CITY_DATA[ville]
@@ -81,29 +74,39 @@ LAT, LON = CITY_DATA[ville]
 @st.cache_data(ttl=3600)
 def get_weather_data(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
+    # On demande ICON-CH et ICON-D2 en fallback
     params = {
-        "latitude": lat, 
-        "longitude": lon, 
+        "latitude": lat, "longitude": lon, 
         "hourly": "temperature_2m,apparent_temperature,precipitation", 
-        "timezone": "Europe/Berlin", 
-        "forecast_days": 8,
-        "models": "icon_ch"  # Utilisation directe du modèle de MétéoSuisse
+        "timezone": "Europe/Berlin", "forecast_days": 8,
+        "models": "icon_ch,icon_d2"
     }
     return requests.get(url, params=params).json()
 
 try:
     data = get_weather_data(LAT, LON)
+    
     if 'hourly' not in data:
-        st.error("Impossible de récupérer les données ICON-CH pour cette zone.")
+        st.error("Données météo indisponibles pour cette zone.")
     else:
-        df = pd.DataFrame(data['hourly'])
-        df['time'] = pd.to_datetime(df['time'])
+        h = data['hourly']
+        # Détection dynamique des colonnes (car l'API ajoute parfois le nom du modèle)
+        t_col = [c for c in h.keys() if 'temperature_2m' in c][0]
+        at_col = [c for c in h.keys() if 'apparent_temperature' in c][0]
+        p_col = [c for c in h.keys() if 'precipitation' in c][0]
+
+        df = pd.DataFrame({
+            'time': pd.to_datetime(h['time']),
+            'temp': h[t_col],
+            'feel': h[at_col],
+            'rain': h[p_col]
+        })
         
         daily_summary = []
         tonight_curve = []
         now_dt = datetime.now().date()
 
-        for i, d in enumerate(sorted(df['time'].dt.date.unique())):
+        for d in sorted(df['time'].dt.date.unique()):
             start_night = datetime.combine(d, datetime.min.time()) + timedelta(hours=20)
             end_night = start_night + timedelta(hours=10)
             night_df = df[(df['time'] >= start_night) & (df['time'] <= end_night)].copy()
@@ -111,13 +114,14 @@ try:
             if night_df.empty: continue
 
             hourly_results = []
+            # On récupère l'index pour calculer les moyennes passées
             for idx, row in night_df.iterrows():
-                idx_i = int(idx)
+                i = int(idx)
                 p = calculate_migration_probability(
-                    df.iloc[max(0, idx_i-8):idx_i]['temperature_2m'].mean(),
-                    df.iloc[max(0, idx_i-2)]['apparent_temperature'],
-                    df.iloc[max(0, idx_i-8):idx_i]['precipitation'].sum(),
-                    row['precipitation'],
+                    df.iloc[max(0, i-8):i]['temp'].mean(),
+                    df.iloc[max(0, i-2)]['feel'].mean() if i > 1 else row['feel'],
+                    df.iloc[max(0, i-8):i]['rain'].sum(),
+                    row['rain'],
                     row['time'].month,
                     row['time']
                 )
@@ -131,8 +135,8 @@ try:
                 "Date": d.strftime("%d %b"),
                 "dt_obj": d,
                 "Heure Opt.": best['time'].strftime("%H:00"),
-                "T° max nuit": f"{round(night_df['apparent_temperature'].max(), 1)}°C",
-                "Pluie nuit": f"{round(night_df['precipitation'].sum(), 1)}mm",
+                "T° ress.": f"{round(night_df['feel'].max(), 1)}°C",
+                "Pluie": f"{round(night_df['rain'].sum(), 1)}mm",
                 "Probab.": f"{best['p']}%",
                 "Activité": icon,
                 "Label": label,
@@ -140,7 +144,7 @@ try:
                 "Score": best['p']
             })
 
-        # --- DASHBOARD PRINCIPAL (STYLE ORIGINAL) ---
+        # --- DASHBOARD PRINCIPAL ---
         tonight_res = next((x for x in daily_summary if x["dt_obj"] == now_dt), None)
         if tonight_res:
             st.markdown(f"""
@@ -158,10 +162,9 @@ try:
                 fig.update_layout(height=180, margin=dict(l=0,r=0,b=0,t=0), yaxis_title="%")
                 st.plotly_chart(fig, use_container_width=True)
 
-        # --- TABLEAU DES PROCHAINES NUITS ---
         st.subheader("📅 Prévisions à 7 jours")
         table_df = pd.DataFrame(daily_summary).drop(columns=['dt_obj', 'Label', 'Score', 'Color'])
         st.table(table_df.set_index('Date'))
 
 except Exception as e:
-    st.error(f"Une erreur est survenue lors de l'appel MétéoSuisse : {e}")
+    st.error(f"Erreur de connexion ou de calcul : {e}")

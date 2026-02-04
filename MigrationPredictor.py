@@ -43,18 +43,19 @@ CITY_DATA = {
 # --- 2. FONCTIONS DE CALCUL ---
 
 def get_lunar_phase_emoji(dt):
-    """Calcule la phase lunaire et retourne l'emoji correspondant"""
+    """Calcule la phase lunaire et retourne l'emoji exact demandé"""
     ref_full_moon = datetime(2026, 1, 3, 11, 22) 
     cycle = 29.53059
     diff = (dt - ref_full_moon).total_seconds() / 86400
     phase = (diff % cycle) / cycle 
-    if phase < 0.06 or phase > 0.94: return "🌑"
-    if phase < 0.19: return "🌙"
-    if phase < 0.31: return "🌓"
-    if phase < 0.44: return "🌔"
-    if phase < 0.56: return "🌕"
-    if phase < 0.69: return "🌖"
-    if phase < 0.81: return "🌗"
+    # Division en 8 segments pour correspondre aux 8 emojis
+    if phase < 0.0625 or phase > 0.9375: return "🌑"
+    if phase < 0.1875: return "🌒"
+    if phase < 0.3125: return "🌓"
+    if phase < 0.4375: return "🌔"
+    if phase < 0.5625: return "🌕"
+    if phase < 0.6875: return "🌖"
+    if phase < 0.8125: return "🌗"
     return "🌘"
 
 def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_curr, month, dt):
@@ -63,7 +64,6 @@ def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_cu
     f_rain_8h = min(1.0, rain_8h_total / 3.0)
     f_rain_curr = min(1.0, rain_curr / 3.0)
     
-    # Facteur lunaire binaire pour le score
     ref_full_moon = datetime(2026, 1, 3, 11, 22)
     cycle = 29.53059
     diff = (dt - ref_full_moon).total_seconds() / 86400
@@ -139,7 +139,7 @@ try:
             
             if night_df.empty: continue
 
-            # Détermination de la fiabilité
+            # Catégories de fiabilité
             if d_idx <= 1: fiabilité = "Très Haute"
             elif d_idx <= 3: fiabilité = "Haute"
             elif d_idx <= 5: fiabilité = "Moyenne"
@@ -197,10 +197,9 @@ try:
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
-        # Tableau final avec dates francisées complètes
+        # Tableau final
         st.subheader("📅 Prévisions à 7 jours")
         table_df = pd.DataFrame(daily_summary).drop(columns=['dt_obj', 'Label', 'Score', 'Color'])
-        # Réorganisation pour que l'ordre soit logique
         table_df = table_df[["Date", "Heure Opt.", "T° max nuit", "Pluie nuit", "Lune", "Fiabilité", "Probab.", "Activité"]]
         st.table(table_df.set_index('Date'))
 

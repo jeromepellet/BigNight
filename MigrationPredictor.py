@@ -83,7 +83,7 @@ def get_weather_data(lat, lon):
     params = {
         "latitude": lat, "longitude": lon,
         "hourly": "temperature_2m,apparent_temperature,precipitation,relative_humidity_2m",
-        "timezone": "Europe/Berlin", "past_days": 7, "forecast_days": 8, "models": "best_match"
+        "timezone": "Europe/Berlin", "past_days": 0, "forecast_days": 8, "models": "best_match"
     }
     resp = requests.get(url, params=params).json()
     if 'apparent_temperature' not in resp['hourly']:
@@ -96,11 +96,10 @@ try:
     df['time'] = pd.to_datetime(df['time'])
     
     daily_summary = []
-    hourly_probs_today = [] # Pour le graphe
     unique_days = sorted(df['time'].dt.date.unique())
     now_dt = datetime.now().date()
 
-    for d in unique_days:
+    for i, d in enumerate(unique_days):
         start = datetime.combine(d, datetime.min.time()) + timedelta(hours=20)
         end = start + timedelta(hours=10)
         night_mask = (df['time'] >= start) & (df['time'] <= end)
@@ -114,20 +113,21 @@ try:
             m_emoji, f_lunar = get_moon_phase_data(row['time'])
             p = calculate_migration_probability(
                 row['apparent_temperature'],
-                df.iloc[idx_i-72:idx_i]['temperature_2m'].values,
-                df.iloc[idx_i-8:idx_i]['precipitation'].sum(),
+                df.iloc[max(0, idx_i-72):idx_i]['temperature_2m'].values,
+                df.iloc[max(0, idx_i-8):idx_i]['precipitation'].sum(),
                 row['relative_humidity_2m'],
                 row['time'].month,
                 f_lunar
             )
             probs.append(p)
-            # Sauvegarder les données horaires si c'est aujourd'hui
-            if d == now_dt:
-                hourly_probs_today.append({"Heure": row['time'].strftime("%Hh"), "Probabilité": p})
             
         max_p = max(probs)
         label, icon = get_label(max_p)
         
+        # Calcul de la fiabilité (dégressif selon le nombre de jours d'écart)
+        conf_score = max(10, 100 - (i * 12))
+        conf_label = "Très Haute" if conf_score > 85 else "Haute" if conf_score > 70 else "Moyenne" if conf_score > 50 else "Faible"
+
         daily_summary.append({
             "Date": format_date_fr(start),
             "dt_obj": d,
@@ -135,6 +135,7 @@ try:
             "Pluie nuit": f"{round(night_df['precipitation'].sum(), 1)}mm",
             "Lune": get_moon_phase_data(start)[0],
             "Probab.": f"{max_p}%",
+            "Fiabilité": conf_label,
             "Activité": icon,
             "Label": label,
             "Score": max_p
@@ -149,24 +150,16 @@ try:
         score = row['Score']
         color = "red" if score > 70 else "orange" if score > 40 else "green"
         st.markdown(f"""
-            <div style="padding:20px; border-radius:10px; border-left: 10px solid {color}; background:rgba(0,0,0,0.05); margin-bottom:10px;">
+            <div style="padding:20px; border-radius:10px; border-left: 10px solid {color}; background:rgba(0,0,0,0.05); margin-bottom:25px;">
                 <h4 style="margin:0; opacity:0.8;">PRÉVISIONS CETTE NUIT</h4>
                 <h2 style="margin:5px 0; color:{color};">{row['Label']} {row['Activité']}</h2>
-                <p style="margin:0;">Pic de probabilité : <b>{score}%</b> | Pluie prévue : <b>{row['Pluie nuit']}</b></p>
+                <p style="margin:0;">Pic de probabilité : <b>{score}%</b> | Fiabilité : <b>{row['Fiabilité']}</b></p>
             </div>
         """, unsafe_allow_html=True)
 
-        # --- LE GRAPHIC SIMPLE ---
-        if hourly_probs_today:
-            chart_data = pd.DataFrame(hourly_probs_today).set_index("Heure")
-            st.line_chart(chart_data, height=200)
-
-    # --- TABLEAUX ---
-    st.subheader("📅 Prochaines nuits")
+    # --- TABLEAU DES PROCHAINES NUITS ---
+    st.subheader("📅 Prévisions à 7 jours")
     st.table(res_df[res_df['dt_obj'] >= now_dt].head(7).drop(columns=['dt_obj', 'Label', 'Score']).set_index('Date'))
-
-    st.subheader("📜 Historique des nuits")
-    st.table(res_df[res_df['dt_obj'] < now_dt].tail(5).iloc[::-1].drop(columns=['dt_obj', 'Label', 'Score']).set_index('Date'))
 
 except Exception as e:
     st.error(f"Erreur : {e}")
@@ -175,8 +168,11 @@ except Exception as e:
 st.divider()
 tab1, tab2 = st.tabs(["💡 Aide", "🔬 Modèle"])
 with tab1:
-    st.markdown("L'indice est calculé sur la fenêtre **20h-06h**. Le graphique montre l'évolution heure par heure.")
+    st.markdown("""
+    - **Fenêtre d'analyse :** 20h00 à 06h00.
+    - **Fiabilité :** Indique la confiance dans les modèles météo. Elle diminue pour les prévisions à plus de 3 jours.
+    """)
 with tab2:
-    st.markdown("**Coupe-circuits appliqués :** Si T < 5°C ou si Pluie < 0.3mm + Humidité < 80%, le score chute drastiquement.")
+    st.markdown("**Coupe-circuits :** Le score est fortement réduit si la température descend sous 5°C ou si le temps est sec (Humidité < 80% sans pluie).")
 
 st.caption(f"© n+p wildlife ecology | {datetime.now().strftime('%d.%m.%Y')}")

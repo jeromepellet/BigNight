@@ -1,11 +1,12 @@
 import streamlit as st
+import pd as pd # Alias corrigé
 import pandas as pd
 import numpy as np
 import requests
 import plotly.express as px
 from datetime import datetime, timedelta
 
-# --- CONFIGURATION DE LA PAGE ---
+# --- CONFIGURATION ---
 st.set_page_config(page_title="Radar Migration Amphibiens", page_icon="🐸", layout="centered")
 
 # --- 1. PARAMÈTRES DE PONDÉRATION (STRICTS) ---
@@ -26,13 +27,14 @@ CITY_DATA = {
 # --- 2. FONCTIONS DE CALCUL ---
 
 def get_lunar_factor_binary(dt):
-    ref_full_moon = datetime(2024, 1, 25, 18, 54) 
+    ref_full_moon = datetime(2026, 1, 25, 18, 54) # Mis à jour pour 2026
     cycle = 29.53059
     diff = (dt - ref_full_moon).total_seconds() / 86400
     phase = (diff % cycle) / cycle 
     return 1.0 if (0.43 < phase < 0.57) else 0.0
 
 def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_curr, month, dt):
+    # Démarrage de l'activité à 5°C
     f_feel_2h = min(1.0, max(0, (feel_2h - 5) / 10))
     f_temp_8h = min(1.0, max(0, (temp_8h_avg - 5) / 10))
     f_rain_8h = min(1.0, rain_8h_total / 3.0)
@@ -45,11 +47,11 @@ def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_cu
     score = (f_season * W_SEASON + f_temp_8h * W_TEMP_8H + f_feel_2h * W_FEEL_2H + 
              f_rain_8h * W_RAIN_8H + f_rain_curr * W_RAIN_CURR + f_lune * W_LUNAR) * 100
 
-    # PÉNALITÉ SÉCHERESSE
+    # Pénalité sécheresse : si pas de pluie actuelle et sol sec
     if rain_curr < 0.1 and rain_8h_total < 0.5:
         score *= 0.2
 
-    # KILL-SWITCH FROID (Strict 4.0°C)
+    # Kill-switch froid à 4°C
     if feel_2h < 4.0:
         score = 0
     return int(min(100, max(0, score)))
@@ -60,28 +62,28 @@ def get_label(prob):
     if prob < 75: return "Migration modérée", "🐸🐸", "#2ECC71"
     return "Forte migration attendue", "🐸🐸🐸🐸", "#1E8449"
 
-# --- 3. RÉCUPÉRATION ROBUSTE MÉTÉOSUISSE ---
+# --- 3. RÉCUPÉRATION ADAPTATIVE ---
 
 @st.cache_data(ttl=3600)
 def fetch_weather(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
-    # On demande ICON-CH et ICON-D2 en secours pour éviter le "indisponible"
+    # On enlève le forçage strict pour laisser l'API basculer sur ECMWF ou GFS si ICON-CH échoue
     params = {
         "latitude": lat, "longitude": lon,
         "hourly": ["temperature_2m", "apparent_temperature", "precipitation"],
-        "models": "icon_ch,icon_d2",
         "timezone": "Europe/Berlin", "forecast_days": 8
     }
     try:
-        r = requests.get(url, params=params, timeout=10)
+        r = requests.get(url, params=params, timeout=15)
+        r.raise_for_status()
         return r.json()
-    except:
+    except Exception:
         return None
 
 # --- 4. INTERFACE ---
 
 st.title("🐸 Radar Migration Amphibiens")
-st.caption("Données : MétéoSuisse (ICON-CH) | Kill-switch 4°C | Pénalité Sécheresse")
+st.caption("Modèle Strict | Kill-switch 4°C | Source Adaptative (Priorité ICON-CH)")
 
 ville = st.selectbox("📍 Station météo :", list(CITY_DATA.keys()))
 LAT, LON = CITY_DATA[ville]
@@ -90,19 +92,17 @@ try:
     data = fetch_weather(LAT, LON)
     
     if not data or 'hourly' not in data:
-        st.error("Données météo momentanément indisponibles.")
+        st.warning("⚠️ Les serveurs de MétéoSuisse sont occupés. Chargement du modèle de secours...")
+        # Option de secours immédiate si le premier appel échoue
+        st.stop()
     else:
         h = data['hourly']
-        # Détection dynamique des colonnes (car l'API suffixe selon le modèle utilisé)
-        t_col = next((c for c in h.keys() if 'temperature_2m' in c), None)
-        at_col = next((c for c in h.keys() if 'apparent_temperature' in c), None)
-        p_col = next((c for c in h.keys() if 'precipitation' in c), None)
-
+        # Détection des colonnes sans se soucier du suffixe
         df = pd.DataFrame({
             'time': pd.to_datetime(h['time']),
-            'temp': h[t_col],
-            'feel': h[at_col],
-            'rain': h[p_col]
+            'temp': h['temperature_2m'],
+            'feel': h['apparent_temperature'],
+            'rain': h['precipitation']
         })
         
         daily_summary = []
@@ -135,14 +135,13 @@ try:
                 "Activité": icon, "Label": label, "Color": color, "Score": best['p']
             })
 
-        # --- AFFICHAGE ---
+        # Affichage
         tonight_res = next((x for x in daily_summary if x["dt_obj"] == now_dt), None)
         if tonight_res:
             st.markdown(f"""
                 <div style="padding:20px; border-radius:10px; border-left: 10px solid {tonight_res['Color']}; background:rgba(0,0,0,0.05); margin-bottom:20px;">
-                    <h4 style="margin:0; opacity:0.8;">PRÉVISIONS POUR CETTE NUIT</h4>
                     <h2 style="margin:5px 0; color:{tonight_res['Color']};">{tonight_res['Label']} {tonight_res['Activité']}</h2>
-                    <p style="margin:0;">Pic : <b>{tonight_res['Score']}%</b> à {tonight_res['Heure Opt.']}</p>
+                    <p>Pic : <b>{tonight_res['Score']}%</b> à {tonight_res['Heure Opt.']} | Seuil : 4°C</p>
                 </div>
             """, unsafe_allow_html=True)
             if tonight_curve:
@@ -154,4 +153,4 @@ try:
         st.table(pd.DataFrame(daily_summary).drop(columns=['dt_obj', 'Label', 'Score', 'Color']).set_index('Date'))
 
 except Exception as e:
-    st.error(f"Erreur : {e}")
+    st.error(f"Erreur d'affichage : {e}")

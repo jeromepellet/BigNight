@@ -201,10 +201,9 @@ try:
         with st.expander("🔬 Pour comprendre le radar"):
             st.markdown("""
             L'activité migratoire des amphibiens est un phénomène multi-factoriel. Ce radar utilise une approche basée sur la synergie entre les seuils physiologiques et les déclencheurs environnementaux.
-            ### Paramètres Bioclimatiques
-            
+            ### Paramètrage
             * **Seuil thermique :** En deçà de **4°C**, le métabolisme ralentit. Le modèle réduit drastiquement toute prévision d'activité sous ce seuil.
-            * **Synergie Hydrique :** Le modèle utilise une fonction multiplicative : le score thermique est plafonné par l'humidité. Un sol sec réduit la probabilité, même par grande douceur.
+            * **Synergie thermo-hydrique :** Le modèle utilise une fonction multiplicative : le score thermique est plafonné par l'humidité. Un sol sec réduit la probabilité, même par grande douceur.
             * **Influence lunaire :** Agit comme un synchronisateur. Les pics sont souvent observés aux abords de la pleine lune.
 
             ### Références
@@ -214,8 +213,9 @@ try:
             * **Bison, M., et al. (2021).** Earlier snowmelt advances breeding phenology of the common frog (Rana temporaria) but increases the risk of frost exposure and wetland drying. *Frontiers in Ecology and Evolution*, 9, 645585. [Lien](https://doi.org/10.3389/fevo.2021.645585)
             * **Dervo, B. K., et al. (2016).** Effects of Temperature and Precipitation on Breeding Migrations of Amphibian Species in Southeastern Norway. *Scientifica*, 2016, 3174316. [Lien](https://doi.org/10.1155/2016/3174316)
             * **Denoël, M., Mathieu, M., & Poncin, P. (2005).** Effect of water temperature on the courtship behavior of the Alpine newt Triturus alpestris. *Behavioral Ecology and Sociobiology*, 58, 121-127. [Lien](https://doi.org/10.1007/s00265-005-0924-8)
-
-            ### Ressources et données en Suisse
+            * **Grant, R., Jarvis, L., & Sengupta, A. (2021).** Lunar phase as a cue for migrations to two species of explosive breeding amphibians (*Bufo bufo* and *Rana temporaria*)—implications for conservation. *European Journal of Wildlife Research*, 67, 11. [Lien](https://doi.org/10.1007/s10344-020-01453-3)
+            
+            ### Ressources
             * Info Fauna karch. *Base de données sur les voies de migration en Suisse (ZSDB)*. [https://lepus.infofauna.ch/zsdb](https://lepus.infofauna.ch/zsdb)
             * Conflits liés au trafic. [https://map.geo.admin.ch](https://s.geo.admin.ch/cwvc8ynhjv0j)
             """)

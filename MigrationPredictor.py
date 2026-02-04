@@ -201,13 +201,15 @@ try:
         with st.expander("🔬 Pour comprendre le radar"):
             st.markdown("""
             L'activité migratoire des amphibiens est un phénomène multi-factoriel. Ce radar utilise une approche basée sur la synergie entre les seuils physiologiques et les déclencheurs environnementaux.
-                       
-            #### Contexte suisse et alpin
-            * **Schmidt, B. R., & Zumbach, S. (2005).** *Amphibien brauchen Schutz*. Info Fauna karch.
-            * **Meyer, A., et al. (2012).** Amphibian population trends in Switzerland. *Biological Conservation*, 144(8), 2647-2656.
-            * **Hartel, T., et al. (2007).** The effect of weather conditions on amphibian migration. *Amphibia-Reptilia*, 28(4), 555-564.
 
-           
+            ### Références
+            * **Reading, C. J. (1998).** The effect of winter temperatures on the timing of breeding activity in the common toad Bufo bufo. *Oecologia*, 117, 469-475. [Lien](https://doi.org/10.1007/s004420050682)
+            * **Arnfield, H., Grant, R., Monk, C., & Uller, T. (2012).** Factors influencing the timing of spring migration in common toads (Bufo bufo). *Journal of Zoology*, 288(2), 112-118. [Lien](https://doi.org/10.1111/j.1469-7998.2012.00933.x)
+            * **Loman, J. (2016).** Breeding phenology in Rana temporaria. Local variation is due to pond temperature and population size. *Ecology and Evolution*, 6(17), 6202-6209. [Lien](https://doi.org/10.1002/ece3.2356)
+            * **Bison, M., et al. (2021).** Earlier snowmelt advances breeding phenology of the common frog (Rana temporaria) but increases the risk of frost exposure and wetland drying. *Frontiers in Ecology and Evolution*, 9, 645585. [Lien](https://doi.org/10.3389/fevo.2021.645585)
+            * **Dervo, B. K., et al. (2016).** Effects of Temperature and Precipitation on Breeding Migrations of Amphibian Species in Southeastern Norway. *Scientifica*, 2016, 3174316. [Lien](https://doi.org/10.1155/2016/3174316)
+            * **Denoël, M., Mathieu, M., & Poncin, P. (2005).** Effect of water temperature on the courtship behavior of the Alpine newt Triturus alpestris. *Behavioral Ecology and Sociobiology*, 58, 121-127. [Lien](https://doi.org/10.1007/s00265-005-0924-8)
+
             ### Ressources et données en Suisse
             * Info Fauna karch. *Base de données sur les voies de migration en Suisse (ZSDB)*. [https://lepus.infofauna.ch/zsdb](https://lepus.infofauna.ch/zsdb)
             * Conflits liés au trafic. [https://map.geo.admin.ch](https://s.geo.admin.ch/cwvc8ynhjv0j)

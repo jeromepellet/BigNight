@@ -209,7 +209,7 @@ try:
 
             ### Références Académiques
             
-            * **Grant, R. A., et al. (2009).** The lunar cycle: a predictor of activity. *Animal Behaviour*, 78(5), 1283-1291. [Lien](https://doi.org/10.1016/j.anbehav.2009.09.005)
+            * **Grant, R. A., et al. (2009).** The lunar cycle: a predictor of activity. *Animal Behaviour*, 78(5), 1283-1291.
            
             ### Ressources et Données Suisses
             * **Info Fauna karch (2026).** *Base de données sur les voies de migration en Suisse (ZSDB)*. [https://lepus.infofauna.ch/zsdb](https://lepus.infofauna.ch/zsdb)

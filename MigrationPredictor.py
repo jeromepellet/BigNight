@@ -22,49 +22,56 @@ CITY_DATA = {
     "Bulle": (46.615, 7.059), "Martigny": (46.103, 7.073), "Sierre": (46.292, 7.532)
 }
 
-# --- LOGIQUE SCIENTIFIQUE ADAPTÉE ---
+# --- LOGIQUE SCIENTIFIQUE ---
 
 def get_lunar_factor(dt):
-    """Calcule si la lune est proche de la pleine lune (+10% de boost)"""
-    ref_full_moon = datetime(2024, 1, 25, 18, 54) # Référence
+    """Boost de +10% lors de la pleine lune (+/- 2 jours)"""
+    # Référence approchée d'une pleine lune
+    ref_full_moon = datetime(2024, 1, 25, 18, 54) 
     cycle = 29.53059
     diff = (dt - ref_full_moon).total_seconds() / 86400
-    phase = (diff % cycle) / cycle # 0 à 1, 0.5 = pleine lune
-    # Si on est à +/- 2 jours de la pleine lune (phase 0.5)
+    phase = (diff % cycle) / cycle 
     if 0.43 < phase < 0.57:
         return 1.10
     return 1.0
 
 def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_curr, month, dt):
-    # 1. Température (Linéaire simple)
+    # 1. Facteurs Température
     f_feel_2h = min(1.0, max(0, (feel_2h - 3) / 10))
     f_temp_8h = min(1.0, max(0, (temp_8h_avg - 3) / 10))
     
     # 2. Pluie Cumulée 8h
     f_rain_8h = min(1.0, rain_8h_total / 3.0)
     
-    # 3. Pluie Actuelle (Nouvelle règle : saturation à 3mm/h)
+    # 3. Pluie Actuelle (Monte de 0 à 1, saturation à 3mm/h)
     f_rain_curr = min(1.0, rain_curr / 3.0)
     
-    # 4. Saison
-    seasonal_map = {2: 0.5, 3: 1.0, 4: 0.9, 10: 0.4}
-    f_season = seasonal_map.get(month, 0.05)
+    # 4. Nouvelle Saisonnalité Adaptée
+    seasonal_map = {
+        1: 0.8,   # Janvier
+        2: 0.9,   # Février
+        3: 1.0,   # Mars (Pic)
+        4: 0.8,   # Avril
+        9: 0.7,   # Septembre
+        10: 0.7   # Octobre
+    }
+    f_season = seasonal_map.get(month, 0.01) # Autres mois à 0.01
     
-    # Calcul Initial pondéré
+    # Score pondéré
     score = (f_season * W_SEASON + f_temp_8h * W_TEMP_8H + 
              f_feel_2h * W_FEEL_2H + f_rain_8h * W_RAIN_8H + 
              f_rain_curr * W_RAIN_CURR) * 100
 
-    # 5. Boost Lunaire
+    # Boost Lunaire
     score *= get_lunar_factor(dt)
 
-    # 6. KILL-SWITCH FROID UNIQUEMENT
+    # UN SEUL KILL-SWITCH : FROID
     if feel_2h < 1.0:
         score = 0
 
     return int(min(100, max(0, score)))
 
-# --- LE RESTE DU CODE (INTERFACE ORIGINALE) ---
+# --- INTERFACE (STYLE ORIGINAL) ---
 
 def get_label(prob):
     if prob < 20: return "Migration peu probable", "❌", "gray"
@@ -72,6 +79,7 @@ def get_label(prob):
     if prob < 75: return "Migration modérée", "🐸🐸", "#2ECC71"
     return "Forte migration attendue", "🐸🐸🐸🐸", "#1E8449"
 
+st.title("Radar des migrations d'amphibiens en Suisse")
 ville = st.selectbox("📍 Station météo :", list(CITY_DATA.keys()))
 LAT, LON = CITY_DATA[ville]
 
@@ -124,18 +132,17 @@ try:
             "Activité": icon,
             "Label": label,
             "Color": color,
-            "Score": best['p'],
-            "Fiabilité": "Haute" if i < 3 else "Moyenne"
+            "Score": best['p']
         })
 
-    # DASHBOARD
+    # --- AFFICHAGE DASHBOARD ORIGINAL ---
     tonight_res = next((x for x in daily_summary if x["dt_obj"] == now_dt), None)
     if tonight_res:
         st.markdown(f"""
             <div style="padding:20px; border-radius:10px; border-left: 10px solid {tonight_res['Color']}; background:rgba(0,0,0,0.05); margin-bottom:20px;">
                 <h4 style="margin:0; opacity:0.8;">PRÉVISIONS POUR CETTE NUIT</h4>
                 <h2 style="margin:5px 0; color:{tonight_res['Color']};">{tonight_res['Label']} {tonight_res['Activité']}</h2>
-                <p style="margin:0;">Pic de probabilité : <b>{tonight_res['Score']}%</b> à <b>{tonight_res['Heure Opt.']}</b> | Fiabilité : <b>{tonight_res['Fiabilité']}</b></p>
+                <p style="margin:0;">Pic de probabilité : <b>{tonight_res['Score']}%</b> à <b>{tonight_res['Heure Opt.']}</b> | Fiabilité : Haute</p>
             </div>
         """, unsafe_allow_html=True)
 
@@ -151,4 +158,4 @@ try:
     st.table(table_df.set_index('Date'))
 
 except Exception as e:
-    st.error(f"Erreur : {e}")
+    st.error(f"Erreur technique : {e}")

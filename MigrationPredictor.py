@@ -189,7 +189,7 @@ try:
                 "Heure Opt.": best['time'].strftime("%H:00")
             })
 
-        # --- DASHBOARD ---
+       # --- DASHBOARD ---
         tonight_res = next((x for x in daily_summary if x["dt_obj"] == now_dt), None)
         if tonight_res:
             st.markdown(f"""
@@ -200,12 +200,69 @@ try:
                 </div>
             """, unsafe_allow_html=True)
 
-            if tonight_curve:
-                st.write("**Evolution des conditions de migrations durant la nuit**")
-                c_df = pd.DataFrame(tonight_curve)
-                fig = px.area(c_df, x="Heure", y="Probabilité", range_y=[0, 100])
-                fig.update_traces(line_color=tonight_res['Color'])
-                fig.update_layout(height=180, margin=dict(l=0,r=0,b=0,t=0), yaxis_title="%", xaxis=dict(tickformat="%H:%M"))
+            if tonight_curve_data:
+                st.write("**Évolution des conditions météo et probabilité de migration**")
+                c_df = pd.DataFrame(tonight_curve_data)
+
+                # Création du graphique avec deux axes Y
+                from plotly.subplots import make_subplots
+                import plotly.graph_objects as go
+
+                fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+                # 1. Probabilité de migration (Area - Remplissage coloré selon le risque)
+                fig.add_trace(
+                    go.Scatter(x=c_df['Heure'], y=c_df['Probabilité'], fill='tozeroy', 
+                               name="Probabilité (%)", line=dict(width=0), 
+                               fillcolor=tonight_res['Color'], opacity=0.2),
+                    secondary_y=False,
+                )
+
+                # 2. Précipitations (Barres - Bleu)
+                fig.add_trace(
+                    go.Bar(x=c_df['Heure'], y=c_df['Pluie'], name="Pluie (mm)", 
+                           marker_color='#3498DB', opacity=0.7),
+                    secondary_y=False,
+                )
+
+                # 3. Température (Ligne - Rouge)
+                fig.add_trace(
+                    go.Scatter(x=c_df['Heure'], y=c_df['Temp'], name="Temp. (°C)", 
+                               line=dict(color='#E74C3C', width=3)),
+                    secondary_y=True,
+                )
+
+                # Configuration des axes
+                # Axe Bleu (Gauche) : Probabilité et Pluie
+                fig.update_yaxes(
+                    title_text="<b>Probabilité / Pluie (mm)</b>", 
+                    title_font=dict(color="#3498DB"),
+                    tickfont=dict(color="#3498DB"),
+                    secondary_y=False, 
+                    range=[0, 100], # Force le départ à 0
+                    showgrid=True, gridcolor='rgba(200,200,200,0.1)'
+                )
+
+                # Axe Rouge (Droite) : Température
+                temp_min = min(c_df['Temp'].min() - 2, 0)
+                temp_max = max(c_df['Temp'].max() + 2, 12)
+                fig.update_yaxes(
+                    title_text="<b>Température (°C)</b>", 
+                    title_font=dict(color="#E74C3C"),
+                    tickfont=dict(color="#E74C3C"),
+                    secondary_y=True, 
+                    range=[temp_min, temp_max], # S'adapte mais garde de la marge
+                    showgrid=False
+                )
+
+                fig.update_layout(
+                    height=280, 
+                    margin=dict(l=0, r=0, b=0, t=10),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    hovermode="x unified",
+                    xaxis=dict(tickformat="%H:%M")
+                )
+
                 st.plotly_chart(fig, use_container_width=True)
 
         # --- TABLEAU DES PRÉVISIONS ---

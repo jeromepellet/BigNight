@@ -212,8 +212,8 @@ try:
             * **A venir**
            
             ### Ressources et données en Suisse
-            * **Info Fauna karch (2026).** *Base de données sur les voies de migration en Suisse (ZSDB)*. [https://lepus.infofauna.ch/zsdb](https://lepus.infofauna.ch/zsdb)
-            * **Conflits liés au trafic (2026). [https://map.geo.admin.ch](https://s.geo.admin.ch/cwvc8ynhjv0j)
+            * Info Fauna karch. *Base de données sur les voies de migration en Suisse (ZSDB)*. [https://lepus.infofauna.ch/zsdb](https://lepus.infofauna.ch/zsdb)
+            * Conflits liés au trafic. [https://map.geo.admin.ch](https://s.geo.admin.ch/cwvc8ynhjv0j)
             """)
 
 except Exception as e:

@@ -44,20 +44,19 @@ CITY_DATA = {
 
 def get_lunar_phase_emoji(dt):
     """Calcule la phase lunaire précise pour 2026"""
-    # Nouvelle lune de référence : 19 Janvier 2026
     ref_new_moon = datetime(2026, 1, 19, 14, 0) 
     cycle = 29.53059
     diff = (dt - ref_new_moon).total_seconds() / 86400
     phase = (diff % cycle) / cycle 
     
-    if phase < 0.0625 or phase > 0.9375: return "🌑" # Nouvelle lune
-    if phase < 0.1875: return "🌒" # Premier croissant
-    if phase < 0.3125: return "🌓" # Premier quartier
-    if phase < 0.4375: return "🌔" # Gibbeuse croissante
-    if phase < 0.5625: return "🌕" # Pleine lune
-    if phase < 0.6875: return "🌖" # Gibbeuse décroissante (Celle d'aujourd'hui !)
-    if phase < 0.8125: return "🌗" # Dernier quartier
-    return "🌘" # Dernier croissant
+    if phase < 0.0625 or phase > 0.9375: return "🌑"
+    if phase < 0.1875: return "🌒"
+    if phase < 0.3125: return "🌓"
+    if phase < 0.4375: return "🌔"
+    if phase < 0.5625: return "🌕"
+    if phase < 0.6875: return "🌖"
+    if phase < 0.8125: return "🌗"
+    return "🌘"
 
 def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_curr, month, dt):
     f_feel_2h = min(1.0, max(0, (feel_2h - 5) / 10))
@@ -65,7 +64,6 @@ def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_cu
     f_rain_8h = min(1.0, rain_8h_total / 3.0)
     f_rain_curr = min(1.0, rain_curr / 3.0)
     
-    # Impact score Pleine lune (+/- 2 jours)
     emoji = get_lunar_phase_emoji(dt)
     f_lune = 1.0 if emoji in ["🌔", "🌕", "🌖"] else 0.0
     
@@ -131,13 +129,21 @@ try:
         now_dt = datetime.now().date()
 
         for d_idx, d in enumerate(sorted(df['time'].dt.date.unique())):
+            # Pluies midi - 20h
+            rain_mid_day = df[(df['time'] >= datetime.combine(d, datetime.min.time()) + timedelta(hours=12)) & 
+                              (df['time'] <= datetime.combine(d, datetime.min.time()) + timedelta(hours=20))]['precipitation'].sum()
+            
+            # Temp ressentie moyenne 18h - 22h
+            temp_evening = df[(df['time'] >= datetime.combine(d, datetime.min.time()) + timedelta(hours=18)) & 
+                              (df['time'] <= datetime.combine(d, datetime.min.time()) + timedelta(hours=22))]['apparent_temperature'].mean()
+
+            # Fenêtre de migration pour calcul probabilité
             start_night = datetime.combine(d, datetime.min.time()) + timedelta(hours=20)
             end_night = start_night + timedelta(hours=10)
             night_df = df[(df['time'] >= start_night) & (df['time'] <= end_night)].copy()
             
             if night_df.empty: continue
 
-            # --- AJOUT COLONNE FIABILITÉ ---
             if d_idx <= 1: fiabilité = "Très Haute"
             elif d_idx <= 3: fiabilité = "Haute"
             elif d_idx <= 5: fiabilité = "Moyenne"
@@ -159,16 +165,16 @@ try:
             daily_summary.append({
                 "Date": format_date_fr_complet(d),
                 "dt_obj": d,
-                "Heure Opt.": best['time'].strftime("%H:00"),
-                "T° max nuit": f"{round(night_df['apparent_temperature'].max(), 1)}°C",
-                "Pluie nuit": f"{round(night_df['precipitation'].sum(), 1)}mm",
+                "Pluie (12h-20h)": f"{round(rain_mid_day, 1)} mm",
+                "T° ress. (18h-22h)": f"{round(temp_evening, 1)}°C",
                 "Lune": get_lunar_phase_emoji(datetime.combine(d, datetime.min.time())),
-                "Fiabilité": fiabilité,
                 "Probab.": f"{best['p']}%",
+                "Fiabilité": fiabilité,
                 "Activité": icon,
                 "Label": label,
                 "Color": color,
-                "Score": best['p']
+                "Score": best['p'],
+                "Heure Opt.": best['time'].strftime("%H:00")
             })
 
         # Dashboard
@@ -183,23 +189,17 @@ try:
             """, unsafe_allow_html=True)
 
             if tonight_curve:
-                # --- AJOUT TEXTE PLOT ---
                 st.write("**Evolution des conditions de migrations durant la nuit**")
                 c_df = pd.DataFrame(tonight_curve)
                 fig = px.area(c_df, x="Heure", y="Probabilité", range_y=[0, 100])
                 fig.update_traces(line_color=tonight_res['Color'])
-                fig.update_layout(
-                    height=180, 
-                    margin=dict(l=0,r=0,b=0,t=0), 
-                    yaxis_title="%",
-                    xaxis=dict(tickformat="%H:%M")
-                )
+                fig.update_layout(height=180, margin=dict(l=0,r=0,b=0,t=0), yaxis_title="%", xaxis=dict(tickformat="%H:%M"))
                 st.plotly_chart(fig, use_container_width=True)
 
-        # Tableau final
+        # Tableau final adapté
         st.subheader("📅 Prévisions à 7 jours")
-        table_df = pd.DataFrame(daily_summary).drop(columns=['dt_obj', 'Label', 'Score', 'Color'])
-        table_df = table_df[["Date", "Heure Opt.", "T° max nuit", "Pluie nuit", "Lune", "Fiabilité", "Probab.", "Activité"]]
+        table_df = pd.DataFrame(daily_summary).drop(columns=['dt_obj', 'Label', 'Score', 'Color', 'Heure Opt.'])
+        table_df = table_df[["Date", "Pluie (12h-20h)", "T° ress. (18h-22h)", "Lune", "Probab.", "Fiabilité", "Activité"]]
         st.table(table_df.set_index('Date'))
 
 except Exception as e:

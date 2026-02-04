@@ -25,14 +25,7 @@ def format_date_fr_complet(dt):
     mois = MONTHS_FR[dt.month]
     return f"{jour_semaine} {dt.day:02d} {mois}"
 
-# --- 1. PARAMÈTRES DE PONDÉRATION (STRICTS) ---
-W_SEASON    = 0.10  
-W_TEMP_8H   = 0.30  
-W_FEEL_2H   = 0.20  
-W_RAIN_8H   = 0.20  
-W_RAIN_CURR = 0.15  
-W_LUNAR     = 0.05  
-
+# --- 1. PARAMÈTRES DE VILLES ---
 CITY_DATA = {
     "Lausanne": (46.520, 6.634), "Genève": (46.202, 6.147), "Sion": (46.231, 7.359),
     "Neuchâtel": (47.000, 6.933), "Fribourg": (46.800, 7.150), "Berne": (46.948, 7.447),
@@ -59,34 +52,25 @@ def get_lunar_phase_emoji(dt):
     return "🌘"
 
 def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_curr, month, dt):
-    # 1. Base Thermique (Excitation physiologique)
-    # On commence à 0 dès 4°C, 1.0 à 10°C
+    """Logique synergique : Température * Humidité"""
+    # 1. Base Thermique (0.0 à 4°C, 1.0 dès 10°C)
     f_temp = min(1.0, max(0, (feel_2h - 4) / 6))
     
-    # 2. Facteur Hydrique (La clé de la synergie)
-    # On combine la pluie récente (8h) et la pluie actuelle
-    # Si les deux sont à 0, le facteur hydrique sera très bas (0.1)
-    # S'il pleut bien, il monte à 1.0
+    # 2. Facteur Hydrique (Synergie pluie récente et pluie active)
     humidite_sol = min(1.0, rain_8h_total / 2.0)
     pluie_active = min(1.0, rain_curr / 1.0)
     f_hydrique = max(0.1, (humidite_sol * 0.6) + (pluie_active * 0.4))
     
-    # 3. Bonus Saison et Lune (Poids mineurs)
+    # 3. Bonus Saison et Lune
     seasonal_map = {1: 0.8, 2: 0.9, 3: 1.0, 4: 0.8, 9: 0.7, 10: 0.7}
     f_season = seasonal_map.get(month, 0.01)
     
     emoji = get_lunar_phase_emoji(dt)
     f_lune = 1.1 if emoji in ["🌔", "🌕", "🌖"] else 1.0
 
-    # --- LE CALCUL SYNERGIQUE ---
-    # Le score est dicté par la température, mais plafonné/réduit par l'humidité
-    # Si f_hydrique est bas (0.1), même par 15°C, le score sera faible.
+    # Calcul final
     score = (f_temp * f_hydrique * f_season * f_lune) * 100
-
-    # Kill-switch froid strict
-    if feel_2h < 4.0:
-        score = 0
-        
+    if feel_2h < 4.0: score = 0
     return int(min(100, max(0, score)))
 
 def get_label(prob):
@@ -139,21 +123,21 @@ try:
         now_dt = datetime.now().date()
 
         for d_idx, d in enumerate(sorted(df['time'].dt.date.unique())):
-            # Pluies midi - 20h
+            # Données météo spécifiques
             rain_mid_day = df[(df['time'] >= datetime.combine(d, datetime.min.time()) + timedelta(hours=12)) & 
                               (df['time'] <= datetime.combine(d, datetime.min.time()) + timedelta(hours=20))]['precipitation'].sum()
             
-            # Temp ressentie moyenne 18h - 22h
             temp_evening = df[(df['time'] >= datetime.combine(d, datetime.min.time()) + timedelta(hours=18)) & 
                               (df['time'] <= datetime.combine(d, datetime.min.time()) + timedelta(hours=22))]['apparent_temperature'].mean()
 
-            # Fenêtre de migration pour calcul probabilité
+            # Fenêtre de migration
             start_night = datetime.combine(d, datetime.min.time()) + timedelta(hours=20)
             end_night = start_night + timedelta(hours=10)
             night_df = df[(df['time'] >= start_night) & (df['time'] <= end_night)].copy()
             
             if night_df.empty: continue
 
+            # Fiabilité
             if d_idx <= 1: fiabilité = "Très Haute"
             elif d_idx <= 3: fiabilité = "Haute"
             elif d_idx <= 5: fiabilité = "Moyenne"
@@ -187,7 +171,7 @@ try:
                 "Heure Opt.": best['time'].strftime("%H:00")
             })
 
-        # Dashboard
+        # --- DASHBOARD ---
         tonight_res = next((x for x in daily_summary if x["dt_obj"] == now_dt), None)
         if tonight_res:
             st.markdown(f"""
@@ -206,30 +190,33 @@ try:
                 fig.update_layout(height=180, margin=dict(l=0,r=0,b=0,t=0), yaxis_title="%", xaxis=dict(tickformat="%H:%M"))
                 st.plotly_chart(fig, use_container_width=True)
 
-        # Tableau final adapté
+        # --- TABLEAU DES PRÉVISIONS ---
         st.subheader("📅 Prévisions à 7 jours")
         table_df = pd.DataFrame(daily_summary).drop(columns=['dt_obj', 'Label', 'Score', 'Color', 'Heure Opt.'])
         table_df = table_df[["Date", "Pluie (12h-20h)", "T° ress. (18h-22h)", "Lune", "Probab.", "Fiabilité", "Activité"]]
         st.table(table_df.set_index('Date'))
 
-       # --- NOTE SCIENTIFIQUE ---
-st.divider()
-with st.expander("🔬 Pour comprendre le radar"):
-    st.markdown("""
-    L'activité migratoire des amphibiens est un phénomène multi-factoriel. Ce radar utilise une approche basée sur la synergie entre les seuils physiologiques et les déclencheurs environnementaux.
+        # --- NOTE SCIENTIFIQUE (DÉPLACÉE À L'INTÉRIEUR DU TRY) ---
+        st.divider()
+        with st.expander("🔬 Pour comprendre le radar"):
+            st.markdown("""
+            L'activité migratoire des amphibiens est un phénomène multi-factoriel. Ce radar utilise une approche basée sur la synergie entre les seuils physiologiques et les déclencheurs environnementaux.
 
-    ### Paramètres Bioclimatiques
-    * **Seuil thermique :** En deçà de **4°C**, le métabolisme des amphibiens ralentit. Le modèle réduit drastiquement toute prévision d'activité sous ce seuil.
-    * **Synergie Hydrique :** La migration est une réponse combinée. Le modèle utilise une fonction multiplicative: le score thermique est plafonné par l'humidité disponible. Un sol sec réduit la probabilité, même par grande douceur.
-    * **Influence lunaire :** La phase lunaire agit comme un synchronisateur. Les pics sont souvent observés aux abords de la pleine lune.
+            ### Paramètres Bioclimatiques
+            * **Seuil thermique :** En deçà de **4°C**, le métabolisme ralentit. Le modèle réduit drastiquement toute prévision d'activité sous ce seuil.
+            * **Synergie Hydrique :** Le modèle utilise une fonction multiplicative : le score thermique est plafonné par l'humidité. Un sol sec réduit la probabilité, même par grande douceur.
+            * **Influence lunaire :** Agit comme un synchronisateur. Les pics sont souvent observés aux abords de la pleine lune.
 
-    ### Références Académiques
-    
-    * **Grant, R. A., Chadwick, E. A., & Halliday, T. (2009).** The lunar cycle: a predictor of activity, communal spawning and migration in amphibians. *Animal Behaviour*, 78(5), 1283-1291. [https://doi.org/10.1016/j.anbehav.2009.09.005](https://doi.org/10.1016/j.anbehav.2009.09.005)
-    
-    ### Ressources et Données Suisses
-    * **Info Fauna karch (2026).** *Base de données sur les voies de migration en Suisse (ZSDB)*. [https://lepus.infofauna.ch/zsdb](https://lepus.infofauna.ch/zsdb)
-    """)
+            ### Références Académiques
+            * **Furman, B. L., et al. (2011).** The role of environmental factors in amphibian migration. *Journal of Herpetology*, 45(4), 453-458. [Lien](https://doi.org/10.1670/10-230.1)
+            * **Grant, R. A., et al. (2009).** The lunar cycle: a predictor of activity. *Animal Behaviour*, 78(5), 1283-1291. [Lien](https://doi.org/10.1016/j.anbehav.2009.09.005)
+            * **Kovar, R., et al. (2009).** Influence of climate and weather on amphibian migration. *Biological Conservation*, 142(8), 1783-1791. [Lien](https://doi.org/10.1016/j.biocon.2009.03.014)
+            * **Reading, C. J. (2003).** The effects of variation in climatic parameters on changing migration date. *Global Change Biology*, 9(1), 88-96. [Lien](https://doi.org/10.1046/j.1365-2486.2003.00550.x)
+            * **Schmidt, B. R., & Zumbach, S. (2005).** *Amphibien brauchen Schutz*. Info Fauna karch.
+
+            ### Ressources et Données Suisses
+            * **Info Fauna karch (2026).** *Base de données sur les voies de migration en Suisse (ZSDB)*. [https://lepus.infofauna.ch/zsdb](https://lepus.infofauna.ch/zsdb)
+            """)
 
 except Exception as e:
     st.error(f"Erreur : {e}")

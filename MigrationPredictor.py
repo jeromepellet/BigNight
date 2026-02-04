@@ -165,16 +165,16 @@ try:
             daily_summary.append({
                 "Date": format_date_fr_complet(d),
                 "dt_obj": d,
-                "Pluie (12h-20h)": f"{round(rain_mid_day, 1)} mm",
-                "T° ress. (18h-22h)": f"{round(temp_evening, 1)}°C",
+                "Pluie": f"{round(rain_mid_day, 1)} mm",
+                "T° ress.": f"{round(temp_evening, 1)}°C",
                 "Lune": get_lunar_phase_emoji(datetime.combine(d, datetime.min.time())),
-                "Probab.": f"{best['p']}%",
+                "Probabilité": f"{best['p']}%",
                 "Fiabilité": fiabilité,
                 "Activité": icon,
                 "Label": label,
                 "Color": color,
                 "Score": best['p'],
-                "Heure Opt.": best['time'].strftime("%H:00")
+                "Heure optimale": best['time'].strftime("%H:00")
             })
 
         # Dashboard

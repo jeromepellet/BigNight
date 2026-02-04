@@ -163,5 +163,3 @@ try:
 
 except Exception as e:
     st.error(f"Erreur : {e}")
-
-st.caption(f"© n+p wildlife ecology | {datetime.now().strftime('%d.%m.%Y')}")

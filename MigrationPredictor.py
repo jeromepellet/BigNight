@@ -27,9 +27,9 @@ def format_date_fr_complet(dt):
 
 # --- 1. PARAMÈTRES DE PONDÉRATION (STRICTS) ---
 W_SEASON    = 0.10  
-W_TEMP_8H   = 0.25  
+W_TEMP_8H   = 0.30  
 W_FEEL_2H   = 0.20  
-W_RAIN_8H   = 0.25  
+W_RAIN_8H   = 0.20  
 W_RAIN_CURR = 0.15  
 W_LUNAR     = 0.05  
 
@@ -165,10 +165,10 @@ try:
             daily_summary.append({
                 "Date": format_date_fr_complet(d),
                 "dt_obj": d,
-                "Pluie": f"{round(rain_mid_day, 1)} mm",
-                "T° ress.": f"{round(temp_evening, 1)}°C",
+                "Pluie (12h-20h)": f"{round(rain_mid_day, 1)} mm",
+                "T° ress. (18h-22h)": f"{round(temp_evening, 1)}°C",
                 "Lune": get_lunar_phase_emoji(datetime.combine(d, datetime.min.time())),
-                "Probabilité": f"{best['p']}%",
+                "Probab.": f"{best['p']}%",
                 "Fiabilité": fiabilité,
                 "Activité": icon,
                 "Label": label,

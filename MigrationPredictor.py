@@ -27,9 +27,9 @@ def format_date_fr_complet(dt):
 
 # --- 1. PARAMÈTRES DE PONDÉRATION (STRICTS) ---
 W_SEASON    = 0.10  
-W_TEMP_8H   = 0.30  
+W_TEMP_8H   = 0.25  
 W_FEEL_2H   = 0.20  
-W_RAIN_8H   = 0.20  
+W_RAIN_8H   = 0.25  
 W_RAIN_CURR = 0.15  
 W_LUNAR     = 0.05  
 

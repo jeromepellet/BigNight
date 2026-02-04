@@ -122,16 +122,56 @@ try:
             if tonight_curve_data:
                 plot_df = pd.DataFrame(tonight_curve_data)
                 fig = make_subplots(specs=[[{"secondary_y": True}]])
-                # Probabilité en arrière-plan
-                fig.add_trace(go.Scatter(x=plot_df['Heure'], y=plot_df['Probabilité'], fill='tozeroy', name="Probabilité (%)", line=dict(width=0), fillcolor=tonight['Color'], opacity=0.2), secondary_y=False)
-                # Précipitations en barres
-                fig.add_trace(go.Bar(x=plot_df['Heure'], y=plot_df['Pluie'], name="Pluie (mm)", marker_color='#AED6F1', opacity=0.8), secondary_y=False)
-                # Température en ligne
-                fig.add_trace(go.Scatter(x=plot_df['Heure'], y=plot_df['Temp'], name="Temp. (°C)", line=dict(color='#E74C3C', width=3)), secondary_y=True)
                 
-                fig.update_yaxes(title_text="Probabilité / Pluie", secondary_y=False, range=[0, 100])
-                fig.update_yaxes(title_text="Température (°C)", secondary_y=True, range=[min(plot_df['Temp'].min()-2, 0), max(plot_df['Temp'].max()+2, 12)])
-                fig.update_layout(height=300, margin=dict(l=0,r=0,b=0,t=30), hovermode="x unified", legend=dict(orientation="h", y=1.1, x=1, xanchor="right"))
+                # 1. Probabilité en arrière-plan (Area)
+                fig.add_trace(go.Scatter(
+                    x=plot_df['Heure'], y=plot_df['Probabilité'], 
+                    fill='tozeroy', name="Probabilité (%)", 
+                    line=dict(width=0), fillcolor=tonight['Color'], opacity=0.2
+                ), secondary_y=False)
+                
+                # 2. Précipitations en barres (Bleu)
+                fig.add_trace(go.Bar(
+                    x=plot_df['Heure'], y=plot_df['Pluie'], 
+                    name="Pluie (mm)", marker_color='#3498DB', opacity=0.8
+                ), secondary_y=False)
+                
+                # 3. Température en ligne (Rouge)
+                fig.add_trace(go.Scatter(
+                    x=plot_df['Heure'], y=plot_df['Temp'], 
+                    name="Temp. (°C)", line=dict(color='#E74C3C', width=3)
+                ), secondary_y=True)
+                
+                # --- PERSONNALISATION DES AXES ---
+                
+                # Axe Y primaire : Bleu (Pluie / Prob)
+                fig.update_yaxes(
+                    title_text="<b>Probabilité / Pluie (mm)</b>", 
+                    title_font=dict(color="#3498DB"),
+                    tickfont=dict(color="#3498DB"),
+                    secondary_y=False, 
+                    range=[0, 100],
+                    gridcolor='rgba(200, 200, 200, 0.2)'
+                )
+                
+                # Axe Y secondaire : Rouge (Température)
+                fig.update_yaxes(
+                    title_text="<b>Température (°C)</b>", 
+                    title_font=dict(color="#E74C3C"),
+                    tickfont=dict(color="#E74C3C"),
+                    secondary_y=True, 
+                    range=[min(plot_df['Temp'].min()-2, 0), max(plot_df['Temp'].max()+2, 12)],
+                    showgrid=False
+                )
+                
+                fig.update_layout(
+                    height=320, 
+                    margin=dict(l=0, r=0, b=0, t=30), 
+                    hovermode="x unified", 
+                    legend=dict(orientation="h", y=1.1, x=1, xanchor="right"),
+                    xaxis=dict(tickformat="%H:%M")
+                )
+                
                 st.plotly_chart(fig, use_container_width=True)
 
         st.subheader("📅 Prévisions à 7 jours")

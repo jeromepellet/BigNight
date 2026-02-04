@@ -294,7 +294,6 @@ try:
             * **Loman, J. (2016).** Breeding phenology in Rana temporaria. Local variation is due to pond temperature and population size. *Ecology and Evolution*, 6(17), 6202-6209. [Lien](https://doi.org/10.1002/ece3.2356)
             * **Bison, M., et al. (2021).** Earlier snowmelt advances breeding phenology of the common frog (Rana temporaria) but increases the risk of frost exposure and wetland drying. *Frontiers in Ecology and Evolution*, 9, 645585. [Lien](https://doi.org/10.3389/fevo.2021.645585)
             * **Dervo, B. K., et al. (2016).** Effects of Temperature and Precipitation on Breeding Migrations of Amphibian Species in Southeastern Norway. *Scientifica*, 2016, 3174316. [Lien](https://doi.org/10.1155/2016/3174316)
-            * **Denoël, M., Mathieu, M., & Poncin, P. (2005).** Effect of water temperature on the courtship behavior of the Alpine newt Triturus alpestris. *Behavioral Ecology and Sociobiology*, 58, 121-127. [Lien](https://doi.org/10.1007/s00265-005-0924-8)
             * **Grant, R., Jarvis, L., & Sengupta, A. (2021).** Lunar phase as a cue for migrations to two species of explosive breeding amphibians (*Bufo bufo* and *Rana temporaria*)—implications for conservation. *European Journal of Wildlife Research*, 67, 11. [Lien](https://doi.org/10.1007/s10344-020-01453-3)
             
             ### Ressources

@@ -74,7 +74,7 @@ def get_label(prob):
 st.title("Radar des migrations d'amphibiens en Suisse")
 st.caption("Prévisions de l'activité migratrice nocturne (20h-06h) basée sur les modèles MétéoSuisse")
 
-ville = st.selectbox("📍 Station de référence :", list(CITY_DATA.keys()))
+ville = st.selectbox("📍 Station météo de référence :", list(CITY_DATA.keys()))
 LAT, LON = CITY_DATA[ville]
 
 @st.cache_data(ttl=3600)
@@ -163,16 +163,5 @@ try:
 
 except Exception as e:
     st.error(f"Erreur : {e}")
-
-# --- ONGLETS ---
-st.divider()
-tab1, tab2 = st.tabs(["💡 Aide", "🔬 Modèle"])
-with tab1:
-    st.markdown("""
-    - **Fenêtre d'analyse :** 20h00 à 06h00.
-    - **Fiabilité :** Indique la confiance dans les modèles météo. Elle diminue pour les prévisions à plus de 3 jours.
-    """)
-with tab2:
-    st.markdown("**Coupe-circuits :** Le score est fortement réduit si la température descend sous 5°C ou si le temps est sec (Humidité < 80% sans pluie).")
 
 st.caption(f"© n+p wildlife ecology | {datetime.now().strftime('%d.%m.%Y')}")

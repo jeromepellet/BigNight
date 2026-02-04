@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
-import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
@@ -22,15 +21,15 @@ def format_date_fr_complet(dt):
 CITY_DATA = {
     "Aigle (AIG)": (46.342, 6.925),
     "Altdorf (ALT)": (46.887, 8.622),
-    "Bale / Binningen (BAS)": (47.541, 7.584),
+    "Bâle / Binningen (BAS)": (47.541, 7.584),
     "Berne / Zollikofen (BER)": (46.991, 7.464),
     "Bulle (BUL)": (46.615, 7.059),
-    "Chateau-d'Oex (CHO)": (46.484, 7.135),
+    "Château-d'Oex (CHO)": (46.484, 7.135),
     "Coire (CHU)": (46.871, 9.531),
     "Fribourg / Posieux (FRE)": (46.772, 7.104),
     "Genève / Cointrin (GVE)": (46.234, 6.109),
     "La Chaux-de-Fonds (CDF)": (47.084, 6.792),
-    "Lausanne / Pully (PUY)": (46.512, 6.668),
+    "Lausanne / Pully (PUY)": (46.512, 6.668), # Index 10
     "Locarno / Monti (OTL)": (46.173, 8.788),
     "Lugano (LUG)": (45.998, 8.960),
     "Lucerne (LUZ)": (47.036, 8.301),
@@ -61,19 +60,11 @@ def get_lunar_phase_emoji(dt):
 
 def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_curr, month, dt):
     f_temp = min(1.0, max(0, (feel_2h - 4) / 6))
-    humidite_sol = min(1.0, rain_8h_total / 2.0)
-    pluie_active = min(1.0, rain_curr / 1.0)
-    f_hydrique = max(0.05, (humidite_sol * 0.6) + (pluie_active * 0.4))
+    f_hydrique = max(0.05, (min(1.0, rain_8h_total / 2.0) * 0.6) + (min(1.0, rain_curr / 1.0) * 0.4))
     f_season = {1: 0.8, 2: 0.9, 3: 1.0, 4: 0.8, 9: 0.7, 10: 0.7}.get(month, 0.01)
     f_lune = 1.1 if get_lunar_phase_emoji(dt) in ["🌔", "🌕", "🌖"] else 1.0
     score = (f_temp * f_hydrique * f_season * f_lune) * 100
     return int(min(100, max(0, score))) if feel_2h >= 4.0 else 0
-
-def get_label(prob):
-    if prob < 20: return "Migration peu probable", "❌", "gray"
-    if prob < 45: return "Migration faible", "🐸", "orange"
-    if prob < 75: return "Migration modérée", "🐸🐸", "#2ECC71"
-    return "Forte migration attendue", "🐸🐸🐸🐸", "#1E8449"
 
 @st.cache_data(ttl=3600)
 def fetch_weather(lat, lon):
@@ -85,126 +76,76 @@ def fetch_weather(lat, lon):
     except: return None
 
 # --- INTERFACE ---
-st.title("Radar des migrations")
-st.caption("Modèle prédictif des migrations d'amphibiens en Suisse | MétéoSuisse (ICON-CH)")
+st.title("Radar des migrations 🐸")
+st.caption("Modèle prédictif basé sur les stations SwissMetNet | Données ICON-CH")
 
-ville = st.selectbox("📍 Sélectionner une station météo :", list(CITY_DATA.keys()))
+# Sélection avec Lausanne (PUY) par défaut
+liste_villes = list(CITY_DATA.keys())
+index_defaut = liste_villes.index("Lausanne / Pully (PUY)")
+ville = st.selectbox("📍 Station météo :", liste_villes, index=index_defaut)
 LAT, LON = CITY_DATA[ville]
 
 try:
     data = fetch_weather(LAT, LON)
-    if not data or 'hourly' not in data:
-        st.error("Données météo indisponibles.")
+    if not data:
+        st.error("Données indisponibles.")
     else:
         h = data['hourly']
-        df = pd.DataFrame({'time': pd.to_datetime(h['time']), 'temperature_2m': h['temperature_2m'], 
-                           'apparent_temperature': h['apparent_temperature'], 'precipitation': h['precipitation']})
+        df = pd.DataFrame({'time': pd.to_datetime(h['time']), 'temp': h['apparent_temperature'], 'precip': h['precipitation']})
         
         daily_summary = []
         tonight_curve_data = []
         now_dt = datetime.now().date()
 
         for d_idx, d in enumerate(sorted(df['time'].dt.date.unique())):
-            mask_day = (df['time'] >= datetime.combine(d, datetime.min.time()) + timedelta(hours=12)) & (df['time'] <= datetime.combine(d, datetime.min.time()) + timedelta(hours=20))
-            rain_mid_day = df[mask_day]['precipitation'].sum()
-            
-            mask_eve = (df['time'] >= datetime.combine(d, datetime.min.time()) + timedelta(hours=18)) & (df['time'] <= datetime.combine(d, datetime.min.time()) + timedelta(hours=22))
-            temp_evening = df[mask_eve]['apparent_temperature'].mean()
-
+            # Calculs simplifiés pour le résumé
             start_night = datetime.combine(d, datetime.min.time()) + timedelta(hours=20)
             night_df = df[(df['time'] >= start_night) & (df['time'] <= start_night + timedelta(hours=10))].copy()
             
             if night_df.empty: continue
 
-            fiabilité = "Basse"
-            if d_idx <= 1: fiabilité = "Très Haute"
-            elif d_idx <= 3: fiabilité = "Haute"
-            elif d_idx <= 5: fiabilité = "Moyenne"
-
             hourly_probs = []
             for idx, row in night_df.iterrows():
-                i = int(idx)
-                rain_8h = df.iloc[max(0, i-8):i]['precipitation'].sum()
-                p = calculate_migration_probability(df.iloc[max(0, i-8):i]['temperature_2m'].mean(), row['apparent_temperature'], rain_8h, row['precipitation'], row['time'].month, row['time'])
-                hourly_probs.append({"Heure": row['time'], "Probabilité": p, "Temp": row['apparent_temperature'], "Pluie": row['precipitation']})
+                rain_8h = df.iloc[max(0, int(idx)-8):int(idx)]['precip'].sum()
+                p = calculate_migration_probability(0, row['temp'], rain_8h, row['precip'], row['time'].month, row['time'])
+                hourly_probs.append({"Heure": row['time'], "Probabilité": p, "Temp": row['temp'], "Pluie": row['precip']})
                 if d == now_dt: tonight_curve_data.append(hourly_probs[-1])
 
             best = max(hourly_probs, key=lambda x: x['Probabilité'])
-            label, icon, color = get_label(best['Probabilité'])
-            daily_summary.append({"Date": format_date_fr_complet(d), "dt_obj": d, "Pluie (12h-20h)": f"{round(rain_mid_day, 1)} mm", "T° ress. (18h-22h)": f"{round(temp_evening, 1)}°C", "Lune": get_lunar_phase_emoji(datetime.combine(d, datetime.min.time())), "Probab.": f"{best['Probabilité']}%", "Fiabilité": fiabilité, "Activité": icon, "Color": color, "Label": label, "Score": best['Probabilité'], "Heure Opt.": best['Heure'].strftime("%H:00")})
-
-        # --- DASHBOARD DE LA NUIT ---
-        tonight = next((x for x in daily_summary if x["dt_obj"] == now_dt), None)
-        if tonight:
-            st.markdown(f'<div style="padding:20px; border-radius:10px; border-left: 10px solid {tonight["Color"]}; background:rgba(0,0,0,0.05); margin-bottom:20px;"><h4 style="margin:0; opacity:0.8;">PRÉVISIONS POUR CETTE NUIT</h4><h2 style="margin:5px 0; color:{tonight["Color"]};">{tonight["Label"]} {tonight["Activité"]}</h2><p>Pic : <b>{tonight["Score"]}%</b> à <b>{tonight["Heure Opt."]}</b> | Fiabilité : {tonight["Fiabilité"]}</p></div>', unsafe_allow_html=True)
             
-            if tonight_curve_data:
-                plot_df = pd.DataFrame(tonight_curve_data)
-                fig = make_subplots(specs=[[{"secondary_y": True}]])
-                
-                # 1. Probabilité en arrière-plan (Area)
-                fig.add_trace(go.Scatter(
-                    x=plot_df['Heure'], y=plot_df['Probabilité'], 
-                    fill='tozeroy', name="Probabilité (%)", 
-                    line=dict(width=0), fillcolor=tonight['Color'], opacity=0.2
-                ), secondary_y=False)
-                
-                # 2. Précipitations en barres (Bleu)
-                fig.add_trace(go.Bar(
-                    x=plot_df['Heure'], y=plot_df['Pluie'], 
-                    name="Pluie (mm)", marker_color='#3498DB', opacity=0.8
-                ), secondary_y=False)
-                
-                # 3. Température en ligne (Rouge)
-                fig.add_trace(go.Scatter(
-                    x=plot_df['Heure'], y=plot_df['Temp'], 
-                    name="Temp. (°C)", line=dict(color='#E74C3C', width=3)
-                ), secondary_y=True)
-                
-                # --- PERSONNALISATION DES AXES ---
-                
-                # Axe Y primaire : Bleu (Pluie / Prob)
-                fig.update_yaxes(
-                    title_text="<b>Probabilité / Pluie (mm)</b>", 
-                    title_font=dict(color="#3498DB"),
-                    tickfont=dict(color="#3498DB"),
-                    secondary_y=False, 
-                    range=[0, 100],
-                    gridcolor='rgba(200, 200, 200, 0.2)'
-                )
-                
-                # Axe Y secondaire : Rouge (Température)
-                fig.update_yaxes(
-                    title_text="<b>Température (°C)</b>", 
-                    title_font=dict(color="#E74C3C"),
-                    tickfont=dict(color="#E74C3C"),
-                    secondary_y=True, 
-                    range=[min(plot_df['Temp'].min()-2, 0), max(plot_df['Temp'].max()+2, 12)],
-                    showgrid=False
-                )
-                
-                fig.update_layout(
-                    height=320, 
-                    margin=dict(l=0, r=0, b=0, t=30), 
-                    hovermode="x unified", 
-                    legend=dict(orientation="h", y=1.1, x=1, xanchor="right"),
-                    xaxis=dict(tickformat="%H:%M")
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
+            # Étiquettes
+            if best['Probabilité'] < 20: label, icon, color = "Peu probable", "❌", "gray"
+            elif best['Probabilité'] < 45: label, icon, color = "Faible", "🐸", "orange"
+            elif best['Probabilité'] < 75: label, icon, color = "Modérée", "🐸🐸", "#2ECC71"
+            else: label, icon, color = "Forte", "🐸🐸🐸🐸", "#1E8449"
 
-        st.subheader("📅 Prévisions à 7 jours")
-        st.table(pd.DataFrame(daily_summary).set_index("Date")[["Pluie (12h-20h)", "T° ress. (18h-22h)", "Lune", "Probab.", "Fiabilité", "Activité"]])
+            daily_summary.append({"Date": format_date_fr_complet(d), "dt_obj": d, "Probab.": f"{best['Probabilité']}%", "Activité": icon, "Color": color, "Label": label})
 
-        # --- NOTE SCIENTIFIQUE ---
-        st.divider()
-        with st.expander("🔬 Fondements scientifiques de la phénologie"):
+        # --- GRAPHIQUE DE LA NUIT ---
+        tonight = next((x for x in daily_summary if x["dt_obj"] == now_dt), None)
+        if tonight and tonight_curve_data:
+            st.markdown(f'<div style="padding:15px; border-radius:10px; border-left: 8px solid {tonight["Color"]}; background:rgba(0,0,0,0.05);"><h3>{tonight["Label"]} {tonight["Activité"]}</h3></div>', unsafe_allow_html=True)
+            
+            plot_df = pd.DataFrame(tonight_curve_data)
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            
+            fig.add_trace(go.Scatter(x=plot_df['Heure'], y=plot_df['Probabilité'], fill='tozeroy', name="Probabilité (%)", line=dict(width=0), fillcolor=tonight['Color'], opacity=0.2), secondary_y=False)
+            fig.add_trace(go.Bar(x=plot_df['Heure'], y=plot_df['Pluie'], name="Pluie (mm)", marker_color='#3498DB', opacity=0.7), secondary_y=False)
+            fig.add_trace(go.Scatter(x=plot_df['Heure'], y=plot_df['Temp'], name="Temp. (°C)", line=dict(color='#E74C3C', width=3)), secondary_y=True)
+            
+            fig.update_yaxes(title_text="<b>Probabilité / Pluie (mm)</b>", title_font=dict(color="#3498DB"), tickfont=dict(color="#3498DB"), secondary_y=False, range=[0, 100])
+            fig.update_yaxes(title_text="<b>Température (°C)</b>", title_font=dict(color="#E74C3C"), tickfont=dict(color="#E74C3C"), secondary_y=True, range=[min(plot_df['Temp'].min()-2, 0), max(plot_df['Temp'].max()+2, 12)])
+            fig.update_layout(height=300, margin=dict(l=0,r=0,b=0,t=30), hovermode="x unified", legend=dict(orientation="h", y=1.1, x=1, xanchor="right"))
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("📅 Prévisions 7 jours")
+        st.table(pd.DataFrame(daily_summary).set_index("Date")[["Probab.", "Activité"]])
+
+        with st.expander("🔬 Fondements scientifiques"):
             st.markdown("""
-            La phénologie migratoire des amphibiens en Europe centrale est régie par des variables environnementales seuils.
-            * **Reading, C. J. (2003).** *The effects of variation in climatic parameters on changing migration date and egg laying in common toads (Bufo bufo).* [Lien Wiley](https://doi.org/10.1046/j.1365-2486.2003.00550.x)
-            * **Kovar, R., et al. (2009).** *Influence of climate and weather on amphibian migration.* [Lien ScienceDirect](https://doi.org/10.1016/j.biocon.2009.03.014)
-            * **Info Fauna karch (2026).** *Base de données biographique ZSDB*. [https://lepus.infofauna.ch/zsdb](https://lepus.infofauna.ch/zsdb)
+            * **Reading, C. J. (2003).** *Migration date and egg laying in common toads.* [Lien](https://doi.org/10.1046/j.1365-2486.2003.00550.x)
+            * **Kovar, R., et al. (2009).** *Climate and weather on amphibian migration.* [Lien](https://doi.org/10.1016/j.biocon.2009.03.014)
+            * **Info Fauna karch.** *Base de données ZSDB.* [lepus.infofauna.ch/zsdb](https://lepus.infofauna.ch/zsdb)
             """)
-
 except Exception as e:
-    st.error(f"Erreur d'exécution : {e}")
+    st.error(f"Erreur : {e}")

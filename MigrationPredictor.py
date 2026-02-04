@@ -182,58 +182,93 @@ try:
                 </div>
             """, unsafe_allow_html=True)
 
-            if tonight_curve:
+if tonight_curve:
                 st.write("**Évolution des conditions de migration et météo durant la nuit**")
                 
-                # Préparation des données pour le plot
-                # tonight_curve contient déjà Heure et Probabilité. 
-                # On récupère les données météo correspondantes dans tonight_df (préparé dans la boucle)
+                # Conversion sécurisée en DataFrame
                 c_df = pd.DataFrame(tonight_curve)
                 
-                # Fusion avec les données météo pour avoir Temp et Pluie au même endroit
+                # Récupération des données météo directement depuis night_df
+                # On s'assure que les types correspondent parfaitement
                 météo_nuit = night_df[['time', 'apparent_temperature', 'precipitation']].copy()
                 météo_nuit.columns = ['Heure', 'Température', 'Pluie']
+                
+                # Fusion sur l'heure
                 plot_data = pd.merge(c_df, météo_nuit, on="Heure")
 
                 import plotly.graph_objects as go
                 from plotly.subplots import make_subplots
 
-                # Création du graphique avec deux axes Y
+                # Création du graphique à double axe
                 fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-                # 1. Barres pour les précipitations (Bleu clair)
+                # 1. Probabilité de migration (Area en arrière-plan)
                 fig.add_trace(
-                    go.Bar(x=plot_data['Heure'], y=plot_data['Pluie'], 
-                           name="Pluie (mm)", marker_color='lightblue', opacity=0.6),
+                    go.Scatter(
+                        x=plot_data['Heure'], 
+                        y=plot_data['Probabilité'], 
+                        fill='tozeroy', 
+                        name="Probabilité (%)",
+                        line=dict(width=0), 
+                        fillcolor=tonight_res['Color'], 
+                        opacity=0.3
+                    ),
                     secondary_y=False,
                 )
 
-                # 2. Ligne pour la température (Rouge/Orange)
+                # 2. Précipitations (Barres bleu clair)
                 fig.add_trace(
-                    go.Scatter(x=plot_data['Heure'], y=plot_data['Température'], 
-                               name="Température (°C)", line=dict(color='orangered', width=3)),
+                    go.Bar(
+                        x=plot_data['Heure'], 
+                        y=plot_data['Pluie'], 
+                        name="Pluie (mm)", 
+                        marker_color='#AED6F1', 
+                        opacity=0.8
+                    ),
+                    secondary_y=False,
+                )
+
+                # 3. Température (Ligne rouge)
+                fig.add_trace(
+                    go.Scatter(
+                        x=plot_data['Heure'], 
+                        y=plot_data['Température'], 
+                        name="Temp. (°C)", 
+                        line=dict(color='#E74C3C', width=3)
+                    ),
                     secondary_y=True,
                 )
 
-                # 3. Surface pour la probabilité (En arrière-plan, vert ou gris selon tonight_res)
-                fig.add_trace(
-                    go.Scatter(x=plot_data['Heure'], y=plot_data['Probabilité'], 
-                               fill='tozeroy', name="Probabilité (%)",
-                               line=dict(width=0), fillcolor=tonight_res['Color'], opacity=0.2),
-                    secondary_y=False,
+                # --- AJUSTEMENT DES AXES ---
+                
+                # Axe Y primaire : Pluie et Probabilité (Commence à 0)
+                # On fixe le max à 100 si la pluie est faible pour garder la probabilité visible
+                y_max_pluie = max(plot_data['Pluie'].max() * 1.2, 5) # Minimum 5mm d'échelle
+                fig.update_yaxes(
+                    title_text="Prob. (%) & Pluie (mm)", 
+                    secondary_y=False, 
+                    range=[0, 100], # Force l'échelle de 0 à 100 pour la probabilité
+                    showgrid=True
                 )
 
-                # Configuration des axes
+                # Axe Y secondaire : Température
+                # On laisse l'échelle s'adapter mais on s'assure qu'on voit les variations
+                temp_min = min(plot_data['Température'].min() - 2, 0)
+                temp_max = max(plot_data['Température'].max() + 2, 10)
+                fig.update_yaxes(
+                    title_text="Température (°C)", 
+                    secondary_y=True, 
+                    range=[temp_min, temp_max],
+                    showgrid=False
+                )
+
                 fig.update_layout(
-                    height=250,
-                    margin=dict(l=0, r=0, b=0, t=20),
+                    height=300,
+                    margin=dict(l=0, r=0, b=0, t=30),
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                    hovermode="x unified"
+                    hovermode="x unified",
+                    xaxis=dict(tickformat="%H:%M", range=[plot_data['Heure'].min(), plot_data['Heure'].max()])
                 )
-
-                fig.update_yaxes(title_text="Pluie (mm) / Prob. (%)", secondary_y=False, range=[0, 100] if plot_data['Pluie'].max() < 1 else None)
-                fig.update_yaxes(title_text="Température (°C)", secondary_y=True)
-                fig.update_xaxes(tickformat="%H:%M")
 
                 st.plotly_chart(fig, use_container_width=True)
 

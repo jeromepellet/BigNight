@@ -8,12 +8,22 @@ from datetime import datetime, timedelta
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Radar Migration Amphibiens", page_icon="🐸", layout="centered")
 
+# --- TRADUCTION DES DATES ---
+MONTHS_FR = {
+    1: "janv.", 2: "févr.", 3: "mars", 4: "avr.", 5: "mai", 6: "juin",
+    7: "juil.", 8: "août", 9: "sept.", 10: "oct.", 11: "nov.", 12: "déc."
+}
+
+def format_date_fr(dt):
+    """Retourne la date au format '04 mars'"""
+    return f"{dt.day:02d} {MONTHS_FR[dt.month]}"
+
 # --- 1. PARAMÈTRES DE PONDÉRATION (STRICTS) ---
-W_SEASON    = 0.05  
+W_SEASON    = 0.10  
 W_TEMP_8H   = 0.30  
 W_FEEL_2H   = 0.20  
-W_RAIN_8H   = 0.30  
-W_RAIN_CURR = 0.10  
+W_RAIN_8H   = 0.20  
+W_RAIN_CURR = 0.15  
 W_LUNAR     = 0.05  
 
 CITY_DATA = {
@@ -26,7 +36,6 @@ CITY_DATA = {
 # --- 2. FONCTIONS DE CALCUL ---
 
 def get_lunar_factor_binary(dt):
-    # Référence pleine lune 2026
     ref_full_moon = datetime(2026, 1, 3, 11, 22) 
     cycle = 29.53059
     diff = (dt - ref_full_moon).total_seconds() / 86400
@@ -122,9 +131,8 @@ try:
             best = max(hourly_results, key=lambda x: x['p'])
             label, icon, color = get_label(best['p'])
             
-            # FORMAT EXACT DU TABLEAU INITIAL
             daily_summary.append({
-                "Date": d.strftime("%d %b"),
+                "Date": format_date_fr(d),  # Traduction ici
                 "dt_obj": d,
                 "Heure Opt.": best['time'].strftime("%H:00"),
                 "T° max nuit": f"{round(night_df['apparent_temperature'].max(), 1)}°C",
@@ -136,23 +144,31 @@ try:
                 "Score": best['p']
             })
 
-        # Dashboard
+        # --- DASHBOARD ---
         tonight_res = next((x for x in daily_summary if x["dt_obj"] == now_dt), None)
         if tonight_res:
             st.markdown(f"""
                 <div style="padding:20px; border-radius:10px; border-left: 10px solid {tonight_res['Color']}; background:rgba(0,0,0,0.05); margin-bottom:20px;">
-                    <h4 style="margin:0; opacity:0.8;">PRÉVISIONS POUR CETTE NUIT</h4>
+                    <h4 style="margin:0; opacity:0.8;">PRÉVISIONS POUR CETTE NUIT ({tonight_res['Date']})</h4>
                     <h2 style="margin:5px 0; color:{tonight_res['Color']};">{tonight_res['Label']} {tonight_res['Activité']}</h2>
                     <p style="margin:0;">Pic : <b>{tonight_res['Score']}%</b> à <b>{tonight_res['Heure Opt.']}</b> | Fiabilité : Haute</p>
                 </div>
             """, unsafe_allow_html=True)
 
             if tonight_curve:
-                fig = px.area(pd.DataFrame(tonight_curve), x="Heure", y="Probabilité", range_y=[0, 100])
-                fig.update_traces(line_color=tonight_res['Color']).update_layout(height=180, margin=dict(l=0,r=0,b=0,t=0))
+                c_df = pd.DataFrame(tonight_curve)
+                # On formate l'axe X pour n'afficher que l'heure (le format FR est implicite)
+                fig = px.area(c_df, x="Heure", y="Probabilité", range_y=[0, 100])
+                fig.update_traces(line_color=tonight_res['Color'])
+                fig.update_layout(
+                    height=180, 
+                    margin=dict(l=0,r=0,b=0,t=0), 
+                    yaxis_title="%",
+                    xaxis=dict(tickformat="%H:%M")
+                )
                 st.plotly_chart(fig, use_container_width=True)
 
-        # TABLEAU FINAL (REPRISE EXACTE DU FORMAT)
+        # --- TABLEAU FINAL EN FRANÇAIS ---
         st.subheader("📅 Prévisions à 7 jours")
         table_df = pd.DataFrame(daily_summary).drop(columns=['dt_obj', 'Label', 'Score', 'Color'])
         st.table(table_df.set_index('Date'))

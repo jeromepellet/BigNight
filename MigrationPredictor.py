@@ -201,15 +201,12 @@ try:
         with st.expander("🔬 Pour comprendre le radar"):
             st.markdown("""
             L'activité migratoire des amphibiens est un phénomène multi-factoriel. Ce radar utilise une approche basée sur la synergie entre les seuils physiologiques et les déclencheurs environnementaux.
+                       
+            #### Contexte suisse et alpin
+            * **Schmidt, B. R., & Zumbach, S. (2005).** *Amphibien brauchen Schutz*. Info Fauna karch.
+            * **Meyer, A., et al. (2012).** Amphibian population trends in Switzerland. *Biological Conservation*, 144(8), 2647-2656.
+            * **Hartel, T., et al. (2007).** The effect of weather conditions on amphibian migration. *Amphibia-Reptilia*, 28(4), 555-564.
 
-            ### Paramètres
-            * **Seuil thermique:** En deçà de 4°C, le métabolisme ralentit. Le modèle réduit drastiquement toute prévision d'activité sous ce seuil.
-            * **Synergie température-humidité:** Le modèle utilise une fonction multiplicative : le score thermique est plafonné par l'humidité. Un sol sec réduit la probabilité, même par grande douceur.
-            * **Influence lunaire:** Agit comme un synchronisateur. Les pics sont souvent observés aux abords de la pleine lune.
-
-            ### Références
-            
-            * **A venir**
            
             ### Ressources et données en Suisse
             * Info Fauna karch. *Base de données sur les voies de migration en Suisse (ZSDB)*. [https://lepus.infofauna.ch/zsdb](https://lepus.infofauna.ch/zsdb)

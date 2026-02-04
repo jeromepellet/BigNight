@@ -8,15 +8,22 @@ from datetime import datetime, timedelta
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Radar Migration Amphibiens", page_icon="🐸", layout="centered")
 
-# --- TRADUCTION DES DATES ---
-MONTHS_FR = {
-    1: "janv.", 2: "févr.", 3: "mars", 4: "avr.", 5: "mai", 6: "juin",
-    7: "juil.", 8: "août", 9: "sept.", 10: "oct.", 11: "nov.", 12: "déc."
+# --- TRADUCTION DES DATES EN FRANÇAIS ---
+DAYS_FR = {
+    0: "Lundi", 1: "Mardi", 2: "Mercredi", 3: "Jeudi", 
+    4: "Vendredi", 5: "Samedi", 6: "Dimanche"
 }
 
-def format_date_fr(dt):
-    """Retourne la date au format '04 mars'"""
-    return f"{dt.day:02d} {MONTHS_FR[dt.month]}"
+MONTHS_FR = {
+    1: "janvier", 2: "février", 3: "mars", 4: "avril", 5: "mai", 6: "juin",
+    7: "juillet", 8: "août", 9: "septembre", 10: "octobre", 11: "novembre", 12: "décembre"
+}
+
+def format_date_fr_complet(dt):
+    """Retourne la date au format 'Mardi 04 février'"""
+    jour_semaine = DAYS_FR[dt.weekday()]
+    mois = MONTHS_FR[dt.month]
+    return f"{jour_semaine} {dt.day:02d} {mois}"
 
 # --- 1. PARAMÈTRES DE PONDÉRATION (STRICTS) ---
 W_SEASON    = 0.10  
@@ -36,6 +43,7 @@ CITY_DATA = {
 # --- 2. FONCTIONS DE CALCUL ---
 
 def get_lunar_factor_binary(dt):
+    # Référence pleine lune 2026
     ref_full_moon = datetime(2026, 1, 3, 11, 22) 
     cycle = 29.53059
     diff = (dt - ref_full_moon).total_seconds() / 86400
@@ -132,7 +140,7 @@ try:
             label, icon, color = get_label(best['p'])
             
             daily_summary.append({
-                "Date": format_date_fr(d),  # Traduction ici
+                "Date": format_date_fr_complet(d),
                 "dt_obj": d,
                 "Heure Opt.": best['time'].strftime("%H:00"),
                 "T° max nuit": f"{round(night_df['apparent_temperature'].max(), 1)}°C",
@@ -144,7 +152,7 @@ try:
                 "Score": best['p']
             })
 
-        # --- DASHBOARD ---
+        # Dashboard
         tonight_res = next((x for x in daily_summary if x["dt_obj"] == now_dt), None)
         if tonight_res:
             st.markdown(f"""
@@ -157,7 +165,6 @@ try:
 
             if tonight_curve:
                 c_df = pd.DataFrame(tonight_curve)
-                # On formate l'axe X pour n'afficher que l'heure (le format FR est implicite)
                 fig = px.area(c_df, x="Heure", y="Probabilité", range_y=[0, 100])
                 fig.update_traces(line_color=tonight_res['Color'])
                 fig.update_layout(
@@ -168,7 +175,7 @@ try:
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
-        # --- TABLEAU FINAL EN FRANÇAIS ---
+        # Tableau final avec dates francisées complètes
         st.subheader("📅 Prévisions à 7 jours")
         table_df = pd.DataFrame(daily_summary).drop(columns=['dt_obj', 'Label', 'Score', 'Color'])
         st.table(table_df.set_index('Date'))

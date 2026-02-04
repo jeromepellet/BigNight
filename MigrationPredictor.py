@@ -87,7 +87,7 @@ def get_label(prob):
 
 # --- INTERFACE ---
 st.title("🐸 Radar des migrations d'amphibiens")
-st.caption("Analyse nocturne (18h-02h) basée sur les modèles MétéoSuisse")
+st.caption("Analyse nocturne (20h-06h) basée sur les modèles MétéoSuisse")
 
 ville = st.selectbox("📍 Station de référence :", list(CITY_DATA.keys()))
 LAT, LON = CITY_DATA[ville]
@@ -114,9 +114,9 @@ try:
     unique_days = sorted(df['time'].dt.date.unique())
 
     for d in unique_days:
-        # Fenêtre de la nuit : 18h à 02h (le lendemain)
-        start = datetime.combine(d, datetime.min.time()) + timedelta(hours=18)
-        end = start + timedelta(hours=8)
+        # Fenêtre de la nuit : 20h à 06h (le lendemain)
+        start = datetime.combine(d, datetime.min.time()) + timedelta(hours=20)
+        end = start + timedelta(hours=10)
         night_mask = (df['time'] >= start) & (df['time'] <= end)
         night_df = df[night_mask].copy()
         
@@ -182,7 +182,7 @@ except Exception as e:
 st.divider()
 tab1, tab2 = st.tabs(["💡 Aide", "🔬 Modèle"])
 with tab1:
-    st.markdown("L'indice est calculé sur la fenêtre **18h-02h**. Si une pluie arrive à minuit, le radar le détectera.")
+    st.markdown("L'indice est calculé sur la fenêtre **20h-06h**. Si une pluie arrive à 4h du matin, le radar le détectera.")
 with tab2:
     st.markdown("**Coupe-circuits appliqués :** Si T < 5°C ou si Pluie < 0.3mm + Humidité < 80%, le score chute drastiquement.")
 

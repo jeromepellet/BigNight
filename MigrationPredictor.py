@@ -71,8 +71,8 @@ def get_label(prob):
     return "Forte migration attendue", "🐸🐸🐸🐸"
 
 # --- INTERFACE ---
-st.title("🐸 Radar des migrations d'amphibiens")
-st.caption("Analyse nocturne (20h-06h) basée sur les modèles MétéoSuisse")
+st.title("Radar des migrations d'amphibiens en Suisse")
+st.caption("Prévisions de l'activité migratrice nocturne (20h-06h) basée sur les modèles MétéoSuisse")
 
 ville = st.selectbox("📍 Station de référence :", list(CITY_DATA.keys()))
 LAT, LON = CITY_DATA[ville]

@@ -174,7 +174,7 @@ try:
                 "Label": label,
                 "Color": color,
                 "Score": best['p'],
-                "Heure optimale": best['time'].strftime("%H:00")
+                "Heure Opt.": best['time'].strftime("%H:00")
             })
 
         # Dashboard

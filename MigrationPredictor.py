@@ -5,15 +5,10 @@ import requests
 import plotly.express as px
 from datetime import datetime, timedelta
 
-# --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(
-    page_title="Radar des migrations d'amphibiens", 
-    page_icon="🐸", 
-    layout="centered"
-)
+# --- CONFIGURATION ---
+st.set_page_config(page_title="Radar Migration Amphibiens", page_icon="🐸", layout="centered")
 
-# --- PARAMÈTRES DU MODÈLE (STRICT) ---
-SATURATION_THRESHOLD = 0.5  
+# --- PARAMÈTRES DU MODÈLE ---
 W_SEASON = 0.15       
 W_TEMP_8H = 0.30      
 W_FEEL_2H = 0.25      
@@ -27,67 +22,63 @@ CITY_DATA = {
     "Bulle": (46.615, 7.059), "Martigny": (46.103, 7.073), "Sierre": (46.292, 7.532)
 }
 
-DAYS_FR = {"Mon": "Lun", "Tue": "Mar", "Wed": "Mer", "Thu": "Jeu", "Fri": "Ven", "Sat": "Sam", "Sun": "Dim"}
-MONTHS_FR = {"Jan": "Janv.", "Feb": "Févr.", "Mar": "Mars", "Apr": "Avril", "May": "Mai", "Jun": "Juin",
-             "Jul": "Juil.", "Aug": "Août", "Sep": "Sept.", "Oct": "Oct.", "Nov": "Nov.", "Dec": "Déc."}
+# --- LOGIQUE SCIENTIFIQUE ADAPTÉE ---
 
-def format_date_fr(dt):
-    return f"{DAYS_FR.get(dt.strftime('%a'), dt.strftime('%a'))} {dt.day} {MONTHS_FR.get(dt.strftime('%b'), dt.strftime('%b'))}"
+def get_lunar_factor(dt):
+    """Calcule si la lune est proche de la pleine lune (+10% de boost)"""
+    ref_full_moon = datetime(2024, 1, 25, 18, 54) # Référence
+    cycle = 29.53059
+    diff = (dt - ref_full_moon).total_seconds() / 86400
+    phase = (diff % cycle) / cycle # 0 à 1, 0.5 = pleine lune
+    # Si on est à +/- 2 jours de la pleine lune (phase 0.5)
+    if 0.43 < phase < 0.57:
+        return 1.10
+    return 1.0
 
-# --- LOGIQUE SCIENTIFIQUE ---
-
-def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_curr, month):
-    # Température (Pénalité sous 4°C)
+def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_curr, month, dt):
+    # 1. Température (Linéaire simple)
     f_feel_2h = min(1.0, max(0, (feel_2h - 3) / 10))
     f_temp_8h = min(1.0, max(0, (temp_8h_avg - 3) / 10))
     
-    # Pluie Cumulée 8h
+    # 2. Pluie Cumulée 8h
     f_rain_8h = min(1.0, rain_8h_total / 3.0)
     
-    # Pluie Actuelle (Saturation Drizzle)
-    if rain_curr < 0.05:
-        f_rain_curr = 0.0
-    elif rain_curr <= SATURATION_THRESHOLD:
-        f_rain_curr = 1.0
-    else:
-        f_rain_curr = max(0.2, 1.0 - (rain_curr - SATURATION_THRESHOLD) / 2.0)
+    # 3. Pluie Actuelle (Nouvelle règle : saturation à 3mm/h)
+    f_rain_curr = min(1.0, rain_curr / 3.0)
     
-    # Saison
+    # 4. Saison
     seasonal_map = {2: 0.5, 3: 1.0, 4: 0.9, 10: 0.4}
     f_season = seasonal_map.get(month, 0.05)
     
+    # Calcul Initial pondéré
     score = (f_season * W_SEASON + f_temp_8h * W_TEMP_8H + 
              f_feel_2h * W_FEEL_2H + f_rain_8h * W_RAIN_8H + 
              f_rain_curr * W_RAIN_CURR) * 100
 
-    # Pénalités Critiques
-    if rain_curr < 0.1 and rain_8h_total < 0.1: score *= 0.15 
-    if feel_2h < 3.5: score *= 0.1
-    if feel_2h < 1.0: score = 0
+    # 5. Boost Lunaire
+    score *= get_lunar_factor(dt)
+
+    # 6. KILL-SWITCH FROID UNIQUEMENT
+    if feel_2h < 1.0:
+        score = 0
 
     return int(min(100, max(0, score)))
 
+# --- LE RESTE DU CODE (INTERFACE ORIGINALE) ---
+
 def get_label(prob):
-    if prob < 20: return "Migration peu probable", "❌"
-    if prob < 45: return "Migration faible", "🐸"
-    if prob < 75: return "Migration modérée", "🐸🐸"
-    return "Forte migration attendue", "🐸🐸🐸🐸"
+    if prob < 20: return "Migration peu probable", "❌", "gray"
+    if prob < 45: return "Migration faible", "🐸", "orange"
+    if prob < 75: return "Migration modérée", "🐸🐸", "#2ECC71"
+    return "Forte migration attendue", "🐸🐸🐸🐸", "#1E8449"
 
-# --- INTERFACE ---
-st.title("Radar des migrations d'amphibiens en Suisse")
-st.caption("Prévisions de l'activité migratrice nocturne (20h-06h) basée sur les modèles MétéoSuisse")
-
-ville = st.selectbox("📍 Station météo de référence :", list(CITY_DATA.keys()))
+ville = st.selectbox("📍 Station météo :", list(CITY_DATA.keys()))
 LAT, LON = CITY_DATA[ville]
 
 @st.cache_data(ttl=3600)
 def get_weather_data(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
-    params = {
-        "latitude": lat, "longitude": lon, 
-        "hourly": "temperature_2m,apparent_temperature,precipitation", 
-        "timezone": "Europe/Berlin", "forecast_days": 8
-    }
+    params = {"latitude": lat, "longitude": lon, "hourly": "temperature_2m,apparent_temperature,precipitation", "timezone": "Europe/Berlin", "forecast_days": 8}
     return requests.get(url, params=params).json()
 
 try:
@@ -114,55 +105,50 @@ try:
                 df.iloc[max(0, idx_i-2)]['apparent_temperature'],
                 df.iloc[max(0, idx_i-8):idx_i]['precipitation'].sum(),
                 row['precipitation'],
-                row['time'].month
+                row['time'].month,
+                row['time']
             )
             hourly_results.append({"time": row['time'], "p": p})
             if d == now_dt: tonight_curve.append({"Heure": row['time'], "Probabilité": p})
 
         best = max(hourly_results, key=lambda x: x['p'])
-        label, icon = get_label(best['p'])
-        conf_label = "Très Haute" if i == 0 else "Haute" if i < 3 else "Moyenne"
-
+        label, icon, color = get_label(best['p'])
+        
         daily_summary.append({
-            "Date": format_date_fr(start_night),
+            "Date": d.strftime("%d %b"),
             "dt_obj": d,
             "Heure Opt.": best['time'].strftime("%H:00"),
-            "T° ressentie": f"{round(night_df['apparent_temperature'].max(), 1)}°C",
-            "Pluie nuit": f"{round(night_df['precipitation'].sum(), 1)}mm",
+            "T° ress.": f"{round(night_df['apparent_temperature'].max(), 1)}°C",
+            "Pluie": f"{round(night_df['precipitation'].sum(), 1)}mm",
             "Probab.": f"{best['p']}%",
-            "Fiabilité": conf_label,
             "Activité": icon,
             "Label": label,
-            "Score": best['p']
+            "Color": color,
+            "Score": best['p'],
+            "Fiabilité": "Haute" if i < 3 else "Moyenne"
         })
 
-    res_df = pd.DataFrame(daily_summary)
-
-    # --- DASHBOARD (EXACT ORIGINAL STYLE) ---
-    tonight = res_df[res_df['dt_obj'] == now_dt]
-    if not tonight.empty:
-        row = tonight.iloc[0]
-        score = row['Score']
-        color = "red" if score > 70 else "orange" if score > 40 else "green"
+    # DASHBOARD
+    tonight_res = next((x for x in daily_summary if x["dt_obj"] == now_dt), None)
+    if tonight_res:
         st.markdown(f"""
-            <div style="padding:20px; border-radius:10px; border-left: 10px solid {color}; background:rgba(0,0,0,0.05); margin-bottom:25px;">
-                <h4 style="margin:0; opacity:0.8;">PRÉVISIONS POUR LA NUIT A VENIR</h4>
-                <h2 style="margin:5px 0; color:{color};">{row['Label']} {row['Activité']}</h2>
-                <p style="margin:0;">Pic de probabilité : <b>{score}%</b> à <b>{row['Heure Opt.']}</b> | Fiabilité : <b>{row['Fiabilité']}</b></p>
+            <div style="padding:20px; border-radius:10px; border-left: 10px solid {tonight_res['Color']}; background:rgba(0,0,0,0.05); margin-bottom:20px;">
+                <h4 style="margin:0; opacity:0.8;">PRÉVISIONS POUR CETTE NUIT</h4>
+                <h2 style="margin:5px 0; color:{tonight_res['Color']};">{tonight_res['Label']} {tonight_res['Activité']}</h2>
+                <p style="margin:0;">Pic de probabilité : <b>{tonight_res['Score']}%</b> à <b>{tonight_res['Heure Opt.']}</b> | Fiabilité : <b>{tonight_res['Fiabilité']}</b></p>
             </div>
         """, unsafe_allow_html=True)
 
-        # --- GRAPH (AXIS 0-100) ---
         if tonight_curve:
             c_df = pd.DataFrame(tonight_curve)
             fig = px.area(c_df, x="Heure", y="Probabilité", range_y=[0, 100])
-            fig.update_traces(line_color=color)
+            fig.update_traces(line_color=tonight_res['Color'])
             fig.update_layout(height=180, margin=dict(l=0,r=0,b=0,t=0), yaxis_title="%")
             st.plotly_chart(fig, use_container_width=True)
 
-    # --- TABLEAU DES PROCHAINES NUITS ---
     st.subheader("📅 Prévisions à 7 jours")
-    st.table(res_df[res_df['dt_obj'] >= now_dt].head(7).drop(columns=['dt_obj', 'Label', 'Score']).set_index('Date'))
+    table_df = pd.DataFrame(daily_summary).drop(columns=['dt_obj', 'Label', 'Score', 'Color'])
+    st.table(table_df.set_index('Date'))
 
 except Exception as e:
     st.error(f"Erreur : {e}")

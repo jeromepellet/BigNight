@@ -9,12 +9,12 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="Radar Migration Amphibiens", page_icon="🐸", layout="centered")
 
 # --- 1. PARAMÈTRES DE PONDÉRATION (STRICTS) ---
-W_SEASON    = 0.10  # 10%
-W_TEMP_8H   = 0.30  # 30%
-W_FEEL_2H   = 0.20  # 20%
-W_RAIN_8H   = 0.20  # 20%
-W_RAIN_CURR = 0.15  # 15%
-W_LUNAR     = 0.05  # 5%
+W_SEASON    = 0.10  
+W_TEMP_8H   = 0.30  
+W_FEEL_2H   = 0.20  
+W_RAIN_8H   = 0.20  
+W_RAIN_CURR = 0.15  
+W_LUNAR     = 0.05  
 
 CITY_DATA = {
     "Lausanne": (46.520, 6.634), "Genève": (46.202, 6.147), "Sion": (46.231, 7.359),
@@ -26,7 +26,6 @@ CITY_DATA = {
 # --- 2. FONCTIONS DE CALCUL ---
 
 def get_lunar_factor_binary(dt):
-    """Retourne 1.0 si Pleine Lune (+/- 2 jours), sinon 0.0"""
     ref_full_moon = datetime(2024, 1, 25, 18, 54) 
     cycle = 29.53059
     diff = (dt - ref_full_moon).total_seconds() / 86400
@@ -34,7 +33,6 @@ def get_lunar_factor_binary(dt):
     return 1.0 if (0.43 < phase < 0.57) else 0.0
 
 def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_curr, month, dt):
-    # Normalisation (Seuil de montée à 5°C pour plus de prudence)
     f_feel_2h = min(1.0, max(0, (feel_2h - 5) / 10))
     f_temp_8h = min(1.0, max(0, (temp_8h_avg - 5) / 10))
     f_rain_8h = min(1.0, rain_8h_total / 3.0)
@@ -44,24 +42,16 @@ def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_cu
     seasonal_map = {1: 0.8, 2: 0.9, 3: 1.0, 4: 0.8, 9: 0.7, 10: 0.7}
     f_season = seasonal_map.get(month, 0.01)
     
-    # Équation de pondération
-    score = (
-        f_season    * W_SEASON + 
-        f_temp_8h   * W_TEMP_8H + 
-        f_feel_2h   * W_FEEL_2H + 
-        f_rain_8h   * W_RAIN_8H + 
-        f_rain_curr * W_RAIN_CURR +
-        f_lune      * W_LUNAR
-    ) * 100
+    score = (f_season * W_SEASON + f_temp_8h * W_TEMP_8H + f_feel_2h * W_FEEL_2H + 
+             f_rain_8h * W_RAIN_8H + f_rain_curr * W_RAIN_CURR + f_lune * W_LUNAR) * 100
 
-    # --- PÉNALITÉ SÉCHERESSE ---
+    # PÉNALITÉ SÉCHERESSE
     if rain_curr < 0.1 and rain_8h_total < 0.5:
         score *= 0.2
 
-    # --- KILL-SWITCH FROID (Strict 4.0°C) ---
+    # KILL-SWITCH FROID (Strict 4.0°C)
     if feel_2h < 4.0:
         score = 0
-
     return int(min(100, max(0, score)))
 
 def get_label(prob):
@@ -70,25 +60,25 @@ def get_label(prob):
     if prob < 75: return "Migration modérée", "🐸🐸", "#2ECC71"
     return "Forte migration attendue", "🐸🐸🐸🐸", "#1E8449"
 
-# --- 3. RÉCUPÉRATION DIRECTE MÉTÉOSUISSE ---
+# --- 3. RÉCUPÉRATION ROBUSTE MÉTÉOSUISSE ---
 
 @st.cache_data(ttl=3600)
 def fetch_weather(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
+    # On demande ICON-CH et ICON-D2 en secours pour éviter le "indisponible"
     params = {
         "latitude": lat, "longitude": lon,
         "hourly": ["temperature_2m", "apparent_temperature", "precipitation"],
-        "models": "icon_ch", # Appel direct MétéoSuisse
+        "models": "icon_ch,icon_d2",
         "timezone": "Europe/Berlin", "forecast_days": 8
     }
     try:
         r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
         return r.json()
     except:
         return None
 
-# --- 4. INTERFACE ET TRAITEMENT ---
+# --- 4. INTERFACE ---
 
 st.title("🐸 Radar Migration Amphibiens")
 st.caption("Données : MétéoSuisse (ICON-CH) | Kill-switch 4°C | Pénalité Sécheresse")
@@ -100,15 +90,19 @@ try:
     data = fetch_weather(LAT, LON)
     
     if not data or 'hourly' not in data:
-        st.error("Données ICON-CH indisponibles pour cette station.")
+        st.error("Données météo momentanément indisponibles.")
     else:
         h = data['hourly']
-        # Gestion des noms de colonnes ICON-CH
+        # Détection dynamique des colonnes (car l'API suffixe selon le modèle utilisé)
+        t_col = next((c for c in h.keys() if 'temperature_2m' in c), None)
+        at_col = next((c for c in h.keys() if 'apparent_temperature' in c), None)
+        p_col = next((c for c in h.keys() if 'precipitation' in c), None)
+
         df = pd.DataFrame({
             'time': pd.to_datetime(h['time']),
-            'temp': h.get('temperature_2m_icon_ch', h.get('temperature_2m')),
-            'feel': h.get('apparent_temperature_icon_ch', h.get('apparent_temperature')),
-            'rain': h.get('precipitation_icon_ch', h.get('precipitation'))
+            'temp': h[t_col],
+            'feel': h[at_col],
+            'rain': h[p_col]
         })
         
         daily_summary = []
@@ -119,18 +113,15 @@ try:
             start_night = datetime.combine(d, datetime.min.time()) + timedelta(hours=20)
             end_night = start_night + timedelta(hours=10)
             night_df = df[(df['time'] >= start_night) & (df['time'] <= end_night)].copy()
-            
             if night_df.empty: continue
 
             hourly_results = []
             for idx, row in night_df.iterrows():
                 i = int(idx)
                 rain_8h = df.iloc[max(0, i-8):i]['rain'].sum()
-                p = calculate_migration_probability(
-                    df.iloc[max(0, i-8):i]['temp'].mean(),
-                    row['feel'], rain_8h, row['rain'],
-                    row['time'].month, row['time']
-                )
+                p = calculate_migration_probability(df.iloc[max(0, i-8):i]['temp'].mean(),
+                                                    row['feel'], rain_8h, row['rain'],
+                                                    row['time'].month, row['time'])
                 hourly_results.append({"time": row['time'], "p": p})
                 if d == now_dt: tonight_curve.append({"Heure": row['time'], "Probabilité": p})
 
@@ -138,40 +129,29 @@ try:
             label, icon, color = get_label(best['p'])
             
             daily_summary.append({
-                "Date": d.strftime("%d %b"),
-                "dt_obj": d,
-                "Heure Opt.": best['time'].strftime("%H:00"),
+                "Date": d.strftime("%d %b"), "dt_obj": d, "Heure Opt.": best['time'].strftime("%H:00"),
                 "T° ress.": f"{round(night_df['feel'].max(), 1)}°C",
-                "Pluie": f"{round(night_df['rain'].sum(), 1)}mm",
-                "Probab.": f"{best['p']}%",
-                "Activité": icon,
-                "Label": label,
-                "Color": color,
-                "Score": best['p']
+                "Pluie": f"{round(night_df['rain'].sum(), 1)}mm", "Probab.": f"{best['p']}%",
+                "Activité": icon, "Label": label, "Color": color, "Score": best['p']
             })
 
-        # --- AFFICHAGE DASHBOARD ---
+        # --- AFFICHAGE ---
         tonight_res = next((x for x in daily_summary if x["dt_obj"] == now_dt), None)
         if tonight_res:
             st.markdown(f"""
                 <div style="padding:20px; border-radius:10px; border-left: 10px solid {tonight_res['Color']}; background:rgba(0,0,0,0.05); margin-bottom:20px;">
                     <h4 style="margin:0; opacity:0.8;">PRÉVISIONS POUR CETTE NUIT</h4>
                     <h2 style="margin:5px 0; color:{tonight_res['Color']};">{tonight_res['Label']} {tonight_res['Activité']}</h2>
-                    <p style="margin:0;">Pic : <b>{tonight_res['Score']}%</b> à <b>{tonight_res['Heure Opt.']}</b> | Fiabilité : Haute (ICON-CH)</p>
+                    <p style="margin:0;">Pic : <b>{tonight_res['Score']}%</b> à {tonight_res['Heure Opt.']}</p>
                 </div>
             """, unsafe_allow_html=True)
-
             if tonight_curve:
-                c_df = pd.DataFrame(tonight_curve)
-                fig = px.area(c_df, x="Heure", y="Probabilité", range_y=[0, 100])
-                fig.update_traces(line_color=tonight_res['Color'])
-                fig.update_layout(height=180, margin=dict(l=0,r=0,b=0,t=0), yaxis_title="%")
+                fig = px.area(pd.DataFrame(tonight_curve), x="Heure", y="Probabilité", range_y=[0, 100])
+                fig.update_traces(line_color=tonight_res['Color']).update_layout(height=180, margin=dict(l=0,r=0,b=0,t=0))
                 st.plotly_chart(fig, use_container_width=True)
 
-        # --- TABLEAU FORMAT ORIGINAL ---
         st.subheader("📅 Prévisions à 7 jours")
-        table_df = pd.DataFrame(daily_summary).drop(columns=['dt_obj', 'Label', 'Score', 'Color'])
-        st.table(table_df.set_index('Date'))
+        st.table(pd.DataFrame(daily_summary).drop(columns=['dt_obj', 'Label', 'Score', 'Color']).set_index('Date'))
 
 except Exception as e:
-    st.error(f"Erreur technique : {e}")
+    st.error(f"Erreur : {e}")

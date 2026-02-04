@@ -43,20 +43,21 @@ CITY_DATA = {
 # --- 2. FONCTIONS DE CALCUL ---
 
 def get_lunar_phase_emoji(dt):
-    """Calcule la phase lunaire et retourne l'emoji exact demandé"""
-    ref_full_moon = datetime(2026, 1, 3, 11, 22) 
+    """Calcule la phase lunaire précise pour 2026"""
+    # Nouvelle lune de référence : 19 Janvier 2026
+    ref_new_moon = datetime(2026, 1, 19, 14, 0) 
     cycle = 29.53059
-    diff = (dt - ref_full_moon).total_seconds() / 86400
+    diff = (dt - ref_new_moon).total_seconds() / 86400
     phase = (diff % cycle) / cycle 
-    # Division en 8 segments pour correspondre aux 8 emojis
-    if phase < 0.0625 or phase > 0.9375: return "🌑"
-    if phase < 0.1875: return "🌒"
-    if phase < 0.3125: return "🌓"
-    if phase < 0.4375: return "🌔"
-    if phase < 0.5625: return "🌕"
-    if phase < 0.6875: return "🌖"
-    if phase < 0.8125: return "🌗"
-    return "🌘"
+    
+    if phase < 0.0625 or phase > 0.9375: return "🌑" # Nouvelle lune
+    if phase < 0.1875: return "🌒" # Premier croissant
+    if phase < 0.3125: return "🌓" # Premier quartier
+    if phase < 0.4375: return "🌔" # Gibbeuse croissante
+    if phase < 0.5625: return "🌕" # Pleine lune
+    if phase < 0.6875: return "🌖" # Gibbeuse décroissante (Celle d'aujourd'hui !)
+    if phase < 0.8125: return "🌗" # Dernier quartier
+    return "🌘" # Dernier croissant
 
 def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_curr, month, dt):
     f_feel_2h = min(1.0, max(0, (feel_2h - 5) / 10))
@@ -64,11 +65,9 @@ def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_cu
     f_rain_8h = min(1.0, rain_8h_total / 3.0)
     f_rain_curr = min(1.0, rain_curr / 3.0)
     
-    ref_full_moon = datetime(2026, 1, 3, 11, 22)
-    cycle = 29.53059
-    diff = (dt - ref_full_moon).total_seconds() / 86400
-    phase = (diff % cycle) / cycle
-    f_lune = 1.0 if (0.43 < phase < 0.57) else 0.0
+    # Impact score Pleine lune (+/- 2 jours)
+    emoji = get_lunar_phase_emoji(dt)
+    f_lune = 1.0 if emoji in ["🌔", "🌕", "🌖"] else 0.0
     
     seasonal_map = {1: 0.8, 2: 0.9, 3: 1.0, 4: 0.8, 9: 0.7, 10: 0.7}
     f_season = seasonal_map.get(month, 0.01)
@@ -78,7 +77,6 @@ def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_cu
 
     if rain_curr < 0.1 and rain_8h_total < 0.5:
         score *= 0.2
-
     if feel_2h < 4.0:
         score = 0
     return int(min(100, max(0, score)))
@@ -139,7 +137,7 @@ try:
             
             if night_df.empty: continue
 
-            # Catégories de fiabilité
+            # --- AJOUT COLONNE FIABILITÉ ---
             if d_idx <= 1: fiabilité = "Très Haute"
             elif d_idx <= 3: fiabilité = "Haute"
             elif d_idx <= 5: fiabilité = "Moyenne"
@@ -185,6 +183,7 @@ try:
             """, unsafe_allow_html=True)
 
             if tonight_curve:
+                # --- AJOUT TEXTE PLOT ---
                 st.write("**Evolution des conditions de migrations durant la nuit**")
                 c_df = pd.DataFrame(tonight_curve)
                 fig = px.area(c_df, x="Heure", y="Probabilité", range_y=[0, 100])

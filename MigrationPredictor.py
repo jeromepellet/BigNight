@@ -59,24 +59,34 @@ def get_lunar_phase_emoji(dt):
     return "🌘"
 
 def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_curr, month, dt):
-    f_feel_2h = min(1.0, max(0, (feel_2h - 5) / 10))
-    f_temp_8h = min(1.0, max(0, (temp_8h_avg - 5) / 10))
-    f_rain_8h = min(1.0, rain_8h_total / 3.0)
-    f_rain_curr = min(1.0, rain_curr / 3.0)
+    # 1. Base Thermique (Excitation physiologique)
+    # On commence à 0 dès 4°C, 1.0 à 10°C
+    f_temp = min(1.0, max(0, (feel_2h - 4) / 6))
     
-    emoji = get_lunar_phase_emoji(dt)
-    f_lune = 1.0 if emoji in ["🌔", "🌕", "🌖"] else 0.0
+    # 2. Facteur Hydrique (La clé de la synergie)
+    # On combine la pluie récente (8h) et la pluie actuelle
+    # Si les deux sont à 0, le facteur hydrique sera très bas (0.1)
+    # S'il pleut bien, il monte à 1.0
+    humidite_sol = min(1.0, rain_8h_total / 2.0)
+    pluie_active = min(1.0, rain_curr / 1.0)
+    f_hydrique = max(0.1, (humidite_sol * 0.6) + (pluie_active * 0.4))
     
+    # 3. Bonus Saison et Lune (Poids mineurs)
     seasonal_map = {1: 0.8, 2: 0.9, 3: 1.0, 4: 0.8, 9: 0.7, 10: 0.7}
     f_season = seasonal_map.get(month, 0.01)
     
-    score = (f_season * W_SEASON + f_temp_8h * W_TEMP_8H + f_feel_2h * W_FEEL_2H + 
-             f_rain_8h * W_RAIN_8H + f_rain_curr * W_RAIN_CURR + f_lune * W_LUNAR) * 100
+    emoji = get_lunar_phase_emoji(dt)
+    f_lune = 1.1 if emoji in ["🌔", "🌕", "🌖"] else 1.0
 
-    if rain_curr < 0.1 and rain_8h_total < 0.5:
-        score *= 0.2
+    # --- LE CALCUL SYNERGIQUE ---
+    # Le score est dicté par la température, mais plafonné/réduit par l'humidité
+    # Si f_hydrique est bas (0.1), même par 15°C, le score sera faible.
+    score = (f_temp * f_hydrique * f_season * f_lune) * 100
+
+    # Kill-switch froid strict
     if feel_2h < 4.0:
         score = 0
+        
     return int(min(100, max(0, score)))
 
 def get_label(prob):

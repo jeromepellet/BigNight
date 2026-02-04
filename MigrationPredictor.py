@@ -212,5 +212,24 @@ try:
         table_df = table_df[["Date", "Pluie (12h-20h)", "T° ress. (18h-22h)", "Lune", "Probab.", "Fiabilité", "Activité"]]
         st.table(table_df.set_index('Date'))
 
+       # --- NOTE SCIENTIFIQUE ---
+st.divider()
+with st.expander("🔬 Pour comprendre le radar"):
+    st.markdown("""
+    L'activité migratoire des amphibiens est un phénomène multi-factoriel. Ce radar utilise une approche basée sur la synergie entre les seuils physiologiques et les déclencheurs environnementaux.
+
+    ### Paramètres Bioclimatiques
+    * **Seuil thermique :** En deçà de **4°C**, le métabolisme des amphibiens ralentit. Le modèle réduit drastiquement toute prévision d'activité sous ce seuil.
+    * **Synergie Hydrique :** La migration est une réponse combinée. Le modèle utilise une fonction multiplicative: le score thermique est plafonné par l'humidité disponible. Un sol sec réduit la probabilité, même par grande douceur.
+    * **Influence lunaire :** La phase lunaire agit comme un synchronisateur. Les pics sont souvent observés aux abords de la pleine lune.
+
+    ### Références Académiques
+    
+    * **Grant, R. A., Chadwick, E. A., & Halliday, T. (2009).** The lunar cycle: a predictor of activity, communal spawning and migration in amphibians. *Animal Behaviour*, 78(5), 1283-1291. [https://doi.org/10.1016/j.anbehav.2009.09.005](https://doi.org/10.1016/j.anbehav.2009.09.005)
+    
+    ### Ressources et Données Suisses
+    * **Info Fauna karch (2026).** *Base de données sur les voies de migration en Suisse (ZSDB)*. [https://lepus.infofauna.ch/zsdb](https://lepus.infofauna.ch/zsdb)
+    """)
+
 except Exception as e:
     st.error(f"Erreur : {e}")

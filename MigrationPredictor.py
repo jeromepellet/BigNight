@@ -18,11 +18,30 @@ MONTHS_FR = {1: "janvier", 2: "février", 3: "mars", 4: "avril", 5: "mai", 6: "j
 def format_date_fr_complet(dt):
     return f"{DAYS_FR[dt.weekday()]} {dt.day:02d} {MONTHS_FR[dt.month]}"
 
+# --- STATIONS OFFICIELLES METEOSUISSE (SwissMetNet) ---
 CITY_DATA = {
-    "Lausanne": (46.520, 6.634), "Genève": (46.202, 6.147), "Sion": (46.231, 7.359),
-    "Neuchâtel": (47.000, 6.933), "Fribourg": (46.800, 7.150), "Berne": (46.948, 7.447),
-    "Zurich": (47.374, 8.541), "Morges": (46.509, 6.498), "Yverdon": (46.779, 6.641),
-    "Bulle": (46.615, 7.059), "Martigny": (46.103, 7.073), "Sierre": (46.292, 7.532)
+    "Aigle (AIG)": (46.342, 6.925),
+    "Altdorf (ALT)": (46.887, 8.622),
+    "Bale / Binningen (BAS)": (47.541, 7.584),
+    "Berne / Zollikofen (BER)": (46.991, 7.464),
+    "Bulle (BUL)": (46.615, 7.059),
+    "Chateau-d'Oex (CHO)": (46.484, 7.135),
+    "Coire (CHU)": (46.871, 9.531),
+    "Fribourg / Posieux (FRE)": (46.772, 7.104),
+    "Genève / Cointrin (GVE)": (46.234, 6.109),
+    "La Chaux-de-Fonds (CDF)": (47.084, 6.792),
+    "Lausanne / Pully (PUY)": (46.512, 6.668),
+    "Locarno / Monti (OTL)": (46.173, 8.788),
+    "Lugano (LUG)": (45.998, 8.960),
+    "Lucerne (LUZ)": (47.036, 8.301),
+    "Magadino / Cadenazzo (MAG)": (46.160, 8.934),
+    "Neuchâtel (NEU)": (46.990, 6.953),
+    "Nyon / Changins (CHA)": (46.397, 6.239),
+    "Payerne (PAY)": (46.811, 6.942),
+    "Sion (SIO)": (46.219, 7.330),
+    "Saint-Gall (STG)": (47.425, 9.399),
+    "Viège / Visp (VIS)": (46.300, 7.850),
+    "Zurich / Fluntern (SMA)": (47.378, 8.566)
 }
 
 # --- LOGIQUE SCIENTIFIQUE ---

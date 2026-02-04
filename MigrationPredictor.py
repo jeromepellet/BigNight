@@ -96,7 +96,7 @@ def fetch_weather(lat, lon):
 # --- 4. INTERFACE ---
 
 st.title("Radar des migrations")
-st.caption("Modèle 6.0 | MétéoSuisse (ICON-CH)")
+st.caption("Modèle prédictif des migrations d'amphibiens en Suisse | MétéoSuisse (ICON-CH)")
 
 ville = st.selectbox("📍 Sélectionner une station météo :", list(CITY_DATA.keys()))
 LAT, LON = CITY_DATA[ville]

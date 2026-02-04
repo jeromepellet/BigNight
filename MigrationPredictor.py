@@ -47,36 +47,21 @@ def get_moon_phase_data(date):
 
 def calculate_migration_probability(temp_app, temps_72h, rain_8h, humidity, month, f_lunar):
     temp_app = 0 if pd.isna(temp_app) else temp_app
-    
-    # 1. Base : Courbe de température (Optimum 12-15°C)
     if 2 < temp_app < 20:
         n = (temp_app - 2) / 16
         f_temp = min(1.0, max(0.05, ((n**2.5) * ((1-n)**1.5)) / 0.35))
     else:
         f_temp = 0.05
-    
-    # 2. Base : Stabilité (sol dégelé)
     f_stab = 1.0 if np.mean(temps_72h[~np.isnan(temps_72h)]) > 5 else 0.2
-    
-    # 3. Base : Pluie (Logarithmique)
     f_rain = min(1.0, np.log1p(rain_8h * 2) / 3.5) if rain_8h > 0.1 else 0.05
-    
-    # 4. Base : Humidité (Exponentielle)
     f_hum = (humidity / 95)**2
-    
-    # 5. Base : Saison
     seasonal_weights = {2: 0.5, 3: 1.0, 4: 0.8, 10: 0.3}
     f_seas = seasonal_weights.get(month, 0.05)
-    
-    # Calcul du score initial
     score = (f_temp * WEIGHT_TEMP_APP + f_stab * WEIGHT_STABILITY + 
              f_rain * WEIGHT_RAIN_8H + f_hum * WEIGHT_HUMIDITY + f_seas * WEIGHT_SEASON)
     score = score * f_seas * f_lunar * 100
-    
-    # --- COUPE-CIRCUITS (Facteurs limitants) ---
-    if temp_app < 5.0: score *= 0.3 # Malus froid sévère
-    if rain_8h < 0.3 and humidity < 80: score *= 0.2 # Malus sécheresse
-    
+    if temp_app < 5.0: score *= 0.3 
+    if rain_8h < 0.3 and humidity < 80: score *= 0.2 
     return int(min(100, max(0, score)))
 
 def get_label(prob):
@@ -111,10 +96,11 @@ try:
     df['time'] = pd.to_datetime(df['time'])
     
     daily_summary = []
+    hourly_probs_today = [] # Pour le graphe
     unique_days = sorted(df['time'].dt.date.unique())
+    now_dt = datetime.now().date()
 
     for d in unique_days:
-        # Fenêtre de la nuit : 20h à 06h (le lendemain)
         start = datetime.combine(d, datetime.min.time()) + timedelta(hours=20)
         end = start + timedelta(hours=10)
         night_mask = (df['time'] >= start) & (df['time'] <= end)
@@ -135,6 +121,9 @@ try:
                 f_lunar
             )
             probs.append(p)
+            # Sauvegarder les données horaires si c'est aujourd'hui
+            if d == now_dt:
+                hourly_probs_today.append({"Heure": row['time'].strftime("%Hh"), "Probabilité": p})
             
         max_p = max(probs)
         label, icon = get_label(max_p)
@@ -152,7 +141,6 @@ try:
         })
 
     res_df = pd.DataFrame(daily_summary)
-    now_dt = datetime.now().date()
     
     # --- DASHBOARD ---
     tonight = res_df[res_df['dt_obj'] == now_dt]
@@ -161,12 +149,17 @@ try:
         score = row['Score']
         color = "red" if score > 70 else "orange" if score > 40 else "green"
         st.markdown(f"""
-            <div style="padding:20px; border-radius:10px; border-left: 10px solid {color}; background:rgba(0,0,0,0.05); margin-bottom:25px;">
+            <div style="padding:20px; border-radius:10px; border-left: 10px solid {color}; background:rgba(0,0,0,0.05); margin-bottom:10px;">
                 <h4 style="margin:0; opacity:0.8;">PRÉVISIONS CETTE NUIT</h4>
                 <h2 style="margin:5px 0; color:{color};">{row['Label']} {row['Activité']}</h2>
                 <p style="margin:0;">Pic de probabilité : <b>{score}%</b> | Pluie prévue : <b>{row['Pluie nuit']}</b></p>
             </div>
         """, unsafe_allow_html=True)
+
+        # --- LE GRAPHIC SIMPLE ---
+        if hourly_probs_today:
+            chart_data = pd.DataFrame(hourly_probs_today).set_index("Heure")
+            st.line_chart(chart_data, height=200)
 
     # --- TABLEAUX ---
     st.subheader("📅 Prochaines nuits")
@@ -182,7 +175,7 @@ except Exception as e:
 st.divider()
 tab1, tab2 = st.tabs(["💡 Aide", "🔬 Modèle"])
 with tab1:
-    st.markdown("L'indice est calculé sur la fenêtre **20h-06h**. Si une pluie arrive à 4h du matin, le radar le détectera.")
+    st.markdown("L'indice est calculé sur la fenêtre **20h-06h**. Le graphique montre l'évolution heure par heure.")
 with tab2:
     st.markdown("**Coupe-circuits appliqués :** Si T < 5°C ou si Pluie < 0.3mm + Humidité < 80%, le score chute drastiquement.")
 

@@ -8,13 +8,13 @@ from datetime import datetime, timedelta
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Radar Migration Amphibiens", page_icon="🐸", layout="centered")
 
-# --- 1. PARAMÈTRES DE PONDÉRATION (L'ÉQUATION) ---
+# --- 1. PARAMÈTRES DE PONDÉRATION (L'ÉQUATION FINALE) ---
 W_SEASON    = 0.15       
 W_TEMP_8H   = 0.25      
 W_FEEL_2H   = 0.20      
 W_RAIN_8H   = 0.15      
 W_RAIN_CURR = 0.15    
-W_LUNAR     = 0.10  # Ton nouveau paramètre
+W_LUNAR     = 0.10  
 
 CITY_DATA = {
     "Lausanne": (46.520, 6.634), "Genève": (46.202, 6.147), "Sion": (46.231, 7.359),
@@ -34,18 +34,21 @@ def get_lunar_factor_binary(dt):
     return 1.0 if (0.43 < phase < 0.57) else 0.0
 
 def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_curr, month, dt):
-    # Normalisation des facteurs
+    # Normalisation des facteurs (0.0 à 1.0)
     f_feel_2h = min(1.0, max(0, (feel_2h - 3) / 10))
     f_temp_8h = min(1.0, max(0, (temp_8h_avg - 3) / 10))
     f_rain_8h = min(1.0, rain_8h_total / 3.0)
+    
+    # Règle rain_curr : monte de 0 à 1, saturation dès 3mm/h
     f_rain_curr = min(1.0, rain_curr / 3.0)
+    
     f_lune = get_lunar_factor_binary(dt)
     
-    # Saisonnalité adaptée
+    # Saisonnalité adaptée selon tes instructions
     seasonal_map = {1: 0.8, 2: 0.9, 3: 1.0, 4: 0.8, 9: 0.7, 10: 0.7}
     f_season = seasonal_map.get(month, 0.01)
     
-    # Équation finale
+    # Équation de pondération finale
     score = (
         f_season    * W_SEASON + 
         f_temp_8h   * W_TEMP_8H + 
@@ -55,7 +58,7 @@ def calculate_migration_probability(temp_8h_avg, feel_2h, rain_8h_total, rain_cu
         f_lune      * W_LUNAR
     ) * 100
 
-    # Kill-switch froid uniquement
+    # Kill-switch froid : arrêt total si ressenti < 1°C
     if feel_2h < 1.0:
         score = 0
 
@@ -70,84 +73,95 @@ def get_label(prob):
 # --- 3. INTERFACE UTILISATEUR ---
 
 st.title("🐸 Radar Migration Amphibiens")
-st.caption("Équation : Saison (15%) + Temp (45%) + Pluie (30%) + Lune (10%)")
+st.caption("Données sources : MétéoSuisse (Modèle ICON-CH 1km)")
 
-ville = st.selectbox("📍 Sélectionner une station :", list(CITY_DATA.keys()))
+ville = st.selectbox("📍 Sélectionner une station météo :", list(CITY_DATA.keys()))
 LAT, LON = CITY_DATA[ville]
 
 @st.cache_data(ttl=3600)
 def get_weather_data(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
-    params = {"latitude": lat, "longitude": lon, "hourly": "temperature_2m,apparent_temperature,precipitation", "timezone": "Europe/Berlin", "forecast_days": 8}
+    params = {
+        "latitude": lat, 
+        "longitude": lon, 
+        "hourly": "temperature_2m,apparent_temperature,precipitation", 
+        "timezone": "Europe/Berlin", 
+        "forecast_days": 8,
+        "models": "icon_ch"  # Utilisation directe du modèle de MétéoSuisse
+    }
     return requests.get(url, params=params).json()
 
 try:
     data = get_weather_data(LAT, LON)
-    df = pd.DataFrame(data['hourly'])
-    df['time'] = pd.to_datetime(df['time'])
-    
-    daily_summary = []
-    tonight_curve = []
-    now_dt = datetime.now().date()
-
-    for i, d in enumerate(sorted(df['time'].dt.date.unique())):
-        start_night = datetime.combine(d, datetime.min.time()) + timedelta(hours=20)
-        end_night = start_night + timedelta(hours=10)
-        night_df = df[(df['time'] >= start_night) & (df['time'] <= end_night)].copy()
+    if 'hourly' not in data:
+        st.error("Impossible de récupérer les données ICON-CH pour cette zone.")
+    else:
+        df = pd.DataFrame(data['hourly'])
+        df['time'] = pd.to_datetime(df['time'])
         
-        if night_df.empty: continue
+        daily_summary = []
+        tonight_curve = []
+        now_dt = datetime.now().date()
 
-        hourly_results = []
-        for idx, row in night_df.iterrows():
-            idx_i = int(idx)
-            p = calculate_migration_probability(
-                df.iloc[max(0, idx_i-8):idx_i]['temperature_2m'].mean(),
-                df.iloc[max(0, idx_i-2)]['apparent_temperature'],
-                df.iloc[max(0, idx_i-8):idx_i]['precipitation'].sum(),
-                row['precipitation'],
-                row['time'].month,
-                row['time']
-            )
-            hourly_results.append({"time": row['time'], "p": p})
-            if d == now_dt: tonight_curve.append({"Heure": row['time'], "Probabilité": p})
+        for i, d in enumerate(sorted(df['time'].dt.date.unique())):
+            start_night = datetime.combine(d, datetime.min.time()) + timedelta(hours=20)
+            end_night = start_night + timedelta(hours=10)
+            night_df = df[(df['time'] >= start_night) & (df['time'] <= end_night)].copy()
+            
+            if night_df.empty: continue
 
-        best = max(hourly_results, key=lambda x: x['p'])
-        label, icon, color = get_label(best['p'])
-        
-        daily_summary.append({
-            "Date": d.strftime("%d %b"),
-            "dt_obj": d,
-            "Heure Opt.": best['time'].strftime("%H:00"),
-            "T° ress.": f"{round(night_df['apparent_temperature'].max(), 1)}°C",
-            "Pluie": f"{round(night_df['precipitation'].sum(), 1)}mm",
-            "Probab.": f"{best['p']}%",
-            "Activité": icon,
-            "Label": label,
-            "Color": color,
-            "Score": best['p']
-        })
+            hourly_results = []
+            for idx, row in night_df.iterrows():
+                idx_i = int(idx)
+                p = calculate_migration_probability(
+                    df.iloc[max(0, idx_i-8):idx_i]['temperature_2m'].mean(),
+                    df.iloc[max(0, idx_i-2)]['apparent_temperature'],
+                    df.iloc[max(0, idx_i-8):idx_i]['precipitation'].sum(),
+                    row['precipitation'],
+                    row['time'].month,
+                    row['time']
+                )
+                hourly_results.append({"time": row['time'], "p": p})
+                if d == now_dt: tonight_curve.append({"Heure": row['time'], "Probabilité": p})
 
-    # --- DASHBOARD PRINCIPAL ---
-    tonight_res = next((x for x in daily_summary if x["dt_obj"] == now_dt), None)
-    if tonight_res:
-        st.markdown(f"""
-            <div style="padding:20px; border-radius:10px; border-left: 10px solid {tonight_res['Color']}; background:rgba(0,0,0,0.05); margin-bottom:20px;">
-                <h4 style="margin:0; opacity:0.8;">PRÉVISIONS POUR CETTE NUIT</h4>
-                <h2 style="margin:5px 0; color:{tonight_res['Color']};">{tonight_res['Label']} {tonight_res['Activité']}</h2>
-                <p style="margin:0;">Pic de probabilité : <b>{tonight_res['Score']}%</b> à <b>{tonight_res['Heure Opt.']}</b> | Fiabilité : Haute</p>
-            </div>
-        """, unsafe_allow_html=True)
+            best = max(hourly_results, key=lambda x: x['p'])
+            label, icon, color = get_label(best['p'])
+            
+            daily_summary.append({
+                "Date": d.strftime("%d %b"),
+                "dt_obj": d,
+                "Heure Opt.": best['time'].strftime("%H:00"),
+                "T° max nuit": f"{round(night_df['apparent_temperature'].max(), 1)}°C",
+                "Pluie nuit": f"{round(night_df['precipitation'].sum(), 1)}mm",
+                "Probab.": f"{best['p']}%",
+                "Activité": icon,
+                "Label": label,
+                "Color": color,
+                "Score": best['p']
+            })
 
-        if tonight_curve:
-            c_df = pd.DataFrame(tonight_curve)
-            fig = px.area(c_df, x="Heure", y="Probabilité", range_y=[0, 100])
-            fig.update_traces(line_color=tonight_res['Color'])
-            fig.update_layout(height=180, margin=dict(l=0,r=0,b=0,t=0), yaxis_title="%")
-            st.plotly_chart(fig, use_container_width=True)
+        # --- DASHBOARD PRINCIPAL (STYLE ORIGINAL) ---
+        tonight_res = next((x for x in daily_summary if x["dt_obj"] == now_dt), None)
+        if tonight_res:
+            st.markdown(f"""
+                <div style="padding:20px; border-radius:10px; border-left: 10px solid {tonight_res['Color']}; background:rgba(0,0,0,0.05); margin-bottom:20px;">
+                    <h4 style="margin:0; opacity:0.8;">PRÉVISIONS POUR CETTE NUIT</h4>
+                    <h2 style="margin:5px 0; color:{tonight_res['Color']};">{tonight_res['Label']} {tonight_res['Activité']}</h2>
+                    <p style="margin:0;">Pic de probabilité : <b>{tonight_res['Score']}%</b> à <b>{tonight_res['Heure Opt.']}</b> | Fiabilité : Haute</p>
+                </div>
+            """, unsafe_allow_html=True)
 
-    st.subheader("📅 Prévisions à 7 jours")
-    table_df = pd.DataFrame(daily_summary).drop(columns=['dt_obj', 'Label', 'Score', 'Color'])
-    st.table(table_df.set_index('Date'))
+            if tonight_curve:
+                c_df = pd.DataFrame(tonight_curve)
+                fig = px.area(c_df, x="Heure", y="Probabilité", range_y=[0, 100])
+                fig.update_traces(line_color=tonight_res['Color'])
+                fig.update_layout(height=180, margin=dict(l=0,r=0,b=0,t=0), yaxis_title="%")
+                st.plotly_chart(fig, use_container_width=True)
+
+        # --- TABLEAU DES PROCHAINES NUITS ---
+        st.subheader("📅 Prévisions à 7 jours")
+        table_df = pd.DataFrame(daily_summary).drop(columns=['dt_obj', 'Label', 'Score', 'Color'])
+        st.table(table_df.set_index('Date'))
 
 except Exception as e:
-    st.error(f"Une erreur est survenue : {e}")
+    st.error(f"Une erreur est survenue lors de l'appel MétéoSuisse : {e}")

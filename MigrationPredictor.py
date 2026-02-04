@@ -151,7 +151,7 @@ try:
         color = "red" if score > 70 else "orange" if score > 40 else "green"
         st.markdown(f"""
             <div style="padding:20px; border-radius:10px; border-left: 10px solid {color}; background:rgba(0,0,0,0.05); margin-bottom:25px;">
-                <h4 style="margin:0; opacity:0.8;">PRÉVISIONS CETTE NUIT</h4>
+                <h4 style="margin:0; opacity:0.8;">PRÉVISIONS POUR LA NUIT A VENIR</h4>
                 <h2 style="margin:5px 0; color:{color};">{row['Label']} {row['Activité']}</h2>
                 <p style="margin:0;">Pic de probabilité : <b>{score}%</b> | Fiabilité : <b>{row['Fiabilité']}</b></p>
             </div>

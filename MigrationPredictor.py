@@ -208,12 +208,9 @@ try:
             * **Influence lunaire :** Agit comme un synchronisateur. Les pics sont souvent observés aux abords de la pleine lune.
 
             ### Références Académiques
-            * **Furman, B. L., et al. (2011).** The role of environmental factors in amphibian migration. *Journal of Herpetology*, 45(4), 453-458. [Lien](https://doi.org/10.1670/10-230.1)
+            
             * **Grant, R. A., et al. (2009).** The lunar cycle: a predictor of activity. *Animal Behaviour*, 78(5), 1283-1291. [Lien](https://doi.org/10.1016/j.anbehav.2009.09.005)
-            * **Kovar, R., et al. (2009).** Influence of climate and weather on amphibian migration. *Biological Conservation*, 142(8), 1783-1791. [Lien](https://doi.org/10.1016/j.biocon.2009.03.014)
-            * **Reading, C. J. (2003).** The effects of variation in climatic parameters on changing migration date. *Global Change Biology*, 9(1), 88-96. [Lien](https://doi.org/10.1046/j.1365-2486.2003.00550.x)
-            * **Schmidt, B. R., & Zumbach, S. (2005).** *Amphibien brauchen Schutz*. Info Fauna karch.
-
+           
             ### Ressources et Données Suisses
             * **Info Fauna karch (2026).** *Base de données sur les voies de migration en Suisse (ZSDB)*. [https://lepus.infofauna.ch/zsdb](https://lepus.infofauna.ch/zsdb)
             """)

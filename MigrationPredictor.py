@@ -9,12 +9,12 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="Radar Migration Amphibiens", page_icon="🐸", layout="centered")
 
 # --- 1. PARAMÈTRES DE PONDÉRATION (L'ÉQUATION) ---
-W_SEASON    = 0.15       
-W_TEMP_8H   = 0.25      
+W_SEASON    = 0.10       
+W_TEMP_8H   = 0.30      
 W_FEEL_2H   = 0.20      
-W_RAIN_8H   = 0.15      
+W_RAIN_8H   = 0.20      
 W_RAIN_CURR = 0.15    
-W_LUNAR     = 0.10  # Ton nouveau paramètre
+W_LUNAR     = 0.05  # Ton nouveau paramètre
 
 CITY_DATA = {
     "Lausanne": (46.520, 6.634), "Genève": (46.202, 6.147), "Sion": (46.231, 7.359),

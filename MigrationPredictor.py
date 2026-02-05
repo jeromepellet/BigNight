@@ -182,29 +182,33 @@ try:
             })
 
 # --- AFFICHAGE DU TABLEAU INTERACTIF ---
-st.subheader("📅 Prévisions à 7 jours")
-st.info("💡 Cliquez sur une ligne pour visualiser le détail horaire de la nuit.")
-
-table_df = pd.DataFrame(daily_summary)
-
-# Configuration de la sélection corrigée
-selection = st.dataframe(
-    table_df[["Date", "Lune", "Probab.", "Activité", "Fiabilité"]],
-    use_container_width=True,
-    hide_index=True,
-    on_select="rerun",
-    selection_mode="single-row"  # <--- Le terme exact est ici
-)
-
-# Récupération de l'index sélectionné
-selected_date = None
-if selection and selection.get("selection", {}).get("rows"):
-    selected_row_idx = selection["selection"]["rows"][0]
-    selected_date = table_df.iloc[selected_row_idx]["Date"]
-else:
-    # Par défaut, on affiche la première ligne du tableau (souvent aujourd'hui)
-    selected_date = table_df.iloc[0]["Date"]
+        st.subheader("📅 Prévisions à 7 jours")
+        st.info("💡 Cliquez sur une ligne pour visualiser le détail horaire de la nuit.")
+        
+        table_df = pd.DataFrame(daily_summary)
+        
+        # Configuration de la sélection corrigée
+        selection = st.dataframe(
+            table_df[["Date", "Lune", "Probab.", "Activité", "Fiabilité"]],
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row"
         )
+
+        # Déterminer quelle date afficher (sélectionnée ou aujourd'hui)
+        selected_date = None
+        if selection and "selection" in selection and selection["selection"]["rows"]:
+            selected_row_idx = selection["selection"]["rows"][0]
+            selected_date = table_df.iloc[selected_row_idx]["Date"]
+        else:
+            # Par défaut, on cherche aujourd'hui dans le tableau
+            today_str = format_date_fr_complet(now_dt)
+            if today_str in all_nights_data:
+                selected_date = today_str
+            else:
+                # Si aujourd'hui n'est pas trouvé, on prend la première ligne dispo
+                selected_date = table_df.iloc[0]["Date"]
 
         # Déterminer quelle date afficher (sélectionnée ou aujourd'hui)
         selected_date = None

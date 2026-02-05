@@ -261,4 +261,6 @@ try:
             """)
 
 except Exception as e:
-    st.error(f"Erreur : {e}")
+    st.error(f"Erreur lors de l'exécution : {e}")
+    import traceback
+    st.code(traceback.format_exc())

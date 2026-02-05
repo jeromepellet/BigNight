@@ -173,45 +173,7 @@ try:
 
             best = max(hourly_results, key=lambda x: x['p'])
             label, icon, color = get_label(best['p'])
-
-# --- CONFIGURATION DES AXES AVEC CONTRAINTES ---
-                
-                # 1. Axe Gauche : Probabilité (fixe 100) et Pluie (max observé ou min 5mm)
-                rain_max_observed = c_df['Pluie'].max()
-                # On s'assure que l'échelle de la pluie montre au moins 5mm, 
-                # tout en restant sur une base 0-100 pour la probabilité
-                y1_upper_bound = 100 
-                
-                fig.update_yaxes(
-                    title_text="<b>Probabilité (%) / Pluie (mm)</b>", 
-                    title_font=dict(color="#3498DB"),
-                    tickfont=dict(color="#3498DB"),
-                    secondary_y=False, 
-                    range=[0, 100], # Contrainte (iii) : Toujours 100% pour la probabilité
-                    showgrid=True, gridcolor='rgba(200,200,200,0.1)'
-                )
-
-                # 2. Axe Droit : Température (max observé ou min 12°C)
-                temp_max_observed = c_df['Temp'].max()
-                temp_limit_y = max(12, temp_max_observed + 1) # Contrainte (ii) : Jamais moins que 12°C
-                temp_min_y = min(c_df['Temp'].min() - 1, 0)
-
-                fig.update_yaxes(
-                    title_text="<b>Température (°C)</b>", 
-                    title_font=dict(color="#E74C3C"),
-                    tickfont=dict(color="#E74C3C"),
-                    secondary_y=True, 
-                    range=[temp_min_y, temp_limit_y],
-                    showgrid=False
-                )
-
-                # Note pour la contrainte (i) : 
-                # Comme la pluie et la probabilité partagent l'axe Y principal (0-100), 
-                # la pluie est naturellement bridée par le 100%. 
-                # Si tu souhaites que les barres de pluie soient plus visibles (échelle 0-5 min),
-                # cela nécessiterait un 3ème axe, ce qui complexifierait le graphique.
-                # Ici, le 100% garantit la visibilité de la probabilité grise.
-            
+           
             daily_summary.append({
                 "Date": format_date_fr_complet(d),
                 "dt_obj": d,

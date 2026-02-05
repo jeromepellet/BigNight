@@ -117,7 +117,7 @@ def fetch_weather(lat, lon):
 # --- 4. INTERFACE ---
 
 st.title("Radar des migrations")
-st.caption("Modèle prédictif des migrations d'amphibiens en Suisse | MétéoSuisse (ICON-CH)")
+st.caption("Modèle prédictif des migrations d'amphibiens en Suisse | Données Open-Meteo & SwissMetNet")
 
 ville = st.selectbox("📍 Sélectionner une station météo :", list(CITY_DATA.keys()), index=10)
 LAT, LON = CITY_DATA[ville]
@@ -137,145 +137,104 @@ try:
         })
         
         daily_summary = []
-        tonight_curve = []
+        all_nights_data = {} # Dictionnaire pour stocker les courbes de chaque nuit
         now_dt = datetime.now().date()
 
         for d_idx, d in enumerate(sorted(df['time'].dt.date.unique())):
-            # Données météo spécifiques
-            rain_mid_day = df[(df['time'] >= datetime.combine(d, datetime.min.time()) + timedelta(hours=12)) & 
-                              (df['time'] <= datetime.combine(d, datetime.min.time()) + timedelta(hours=20))]['precipitation'].sum()
-            
-            temp_evening = df[(df['time'] >= datetime.combine(d, datetime.min.time()) + timedelta(hours=18)) & 
-                              (df['time'] <= datetime.combine(d, datetime.min.time()) + timedelta(hours=22))]['apparent_temperature'].mean()
-
-            # Fenêtre de migration
+            # Fenêtre de migration (20h le soir à 06h le lendemain)
             start_night = datetime.combine(d, datetime.min.time()) + timedelta(hours=20)
             end_night = start_night + timedelta(hours=10)
             night_df = df[(df['time'] >= start_night) & (df['time'] <= end_night)].copy()
             
             if night_df.empty: continue
 
-            # Fiabilité
-            if d_idx <= 1: fiabilité = "Très Haute"
-            elif d_idx <= 3: fiabilité = "Haute"
-            elif d_idx <= 5: fiabilité = "Moyenne"
-            else: fiabilité = "Basse"
+            # Fiabilité (simple estimation basée sur l'horizon temporel)
+            fiabilité = ["Très Haute", "Haute", "Moyenne", "Basse"][min(d_idx // 2, 3)]
 
             hourly_results = []
             for idx, row in night_df.iterrows():
                 i = int(idx)
                 rain_8h = df.iloc[max(0, i-8):i]['precipitation'].sum()
-                p = calculate_migration_probability(df.iloc[max(0, i-8):i]['temperature_2m'].mean(),
-                                                    row['apparent_temperature'], rain_8h, row['precipitation'],
-                                                    row['time'].month, row['time'])
-                hourly_results.append({"time": row['time'], "p": p})
-                if d == now_dt: tonight_curve.append({"Heure": row['time'], "Probabilité": p})
+                p = calculate_migration_probability(
+                    df.iloc[max(0, i-8):i]['temperature_2m'].mean(),
+                    row['apparent_temperature'], rain_8h, row['precipitation'],
+                    row['time'].month, row['time']
+                )
+                hourly_results.append({"Heure": row['time'], "Probabilité": p, "Temp": row['apparent_temperature'], "Pluie": row['precipitation']})
 
-            best = max(hourly_results, key=lambda x: x['p'])
-            label, icon, color = get_label(best['p'])
+            best = max(hourly_results, key=lambda x: x['Probabilité'])
+            label, icon, color = get_label(best['Probabilité'])
+            
+            # Stockage pour le tableau
+            date_str = format_date_fr_complet(d)
+            all_nights_data[date_str] = pd.DataFrame(hourly_results)
             
             daily_summary.append({
-                "Date": format_date_fr_complet(d),
-                "dt_obj": d,
-                "Pluie (12h-20h)": f"{round(rain_mid_day, 1)} mm",
-                "T° ress. (18h-22h)": f"{round(temp_evening, 1)}°C",
+                "Date": date_str,
                 "Lune": get_lunar_phase_emoji(datetime.combine(d, datetime.min.time())),
-                "Probab.": f"{best['p']}%",
-                "Fiabilité": fiabilité,
+                "Probab.": f"{best['Probabilité']}%",
                 "Activité": icon,
-                "Label": label,
+                "Fiabilité": fiabilité,
                 "Color": color,
-                "Score": best['p'],
-                "Heure Opt.": best['time'].strftime("%H:00")
+                "Label": label,
+                "Score": best['Probabilité'],
+                "Heure Opt.": best['Heure'].strftime("%H:00")
             })
 
-       # --- DASHBOARD ---
-        tonight_res = next((x for x in daily_summary if x["dt_obj"] == now_dt), None)
-        if tonight_res:
+        # --- AFFICHAGE DU TABLEAU INTERACTIF ---
+        st.subheader("📅 Prévisions à 7 jours")
+        st.info("💡 Cliquez sur une ligne pour visualiser le détail horaire de la nuit.")
+        
+        table_df = pd.DataFrame(daily_summary)
+        
+        # Configuration de la sélection
+        selection = st.dataframe(
+            table_df[["Date", "Lune", "Probab.", "Activité", "Fiabilité"]],
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single"
+        )
+
+        # Déterminer quelle date afficher (sélectionnée ou aujourd'hui)
+        selected_date = None
+        if selection and selection.get("selection", {}).get("rows"):
+            selected_row_idx = selection["selection"]["rows"][0]
+            selected_date = table_df.iloc[selected_row_idx]["Date"]
+        else:
+            # Par défaut, on cherche aujourd'hui dans le tableau
+            today_str = format_date_fr_complet(now_dt)
+            if today_str in all_nights_data:
+                selected_date = today_str
+
+        # --- DASHBOARD & GRAPHIQUE ---
+        if selected_date:
+            res = table_df[table_df["Date"] == selected_date].iloc[0]
+            c_df = all_nights_data[selected_date]
+
             st.markdown(f"""
-                <div style="padding:20px; border-radius:10px; border-left: 10px solid {tonight_res['Color']}; background:rgba(0,0,0,0.05); margin-bottom:20px;">
-                    <h4 style="margin:0; opacity:0.8;">PRÉVISIONS POUR CETTE NUIT ({tonight_res['Date']})</h4>
-                    <h2 style="margin:5px 0; color:{tonight_res['Color']};">{tonight_res['Label']} {tonight_res['Activité']}</h2>
-                    <p style="margin:0;">Pic : <b>{tonight_res['Score']}%</b> à <b>{tonight_res['Heure Opt.']}</b> | Fiabilité : {tonight_res['Fiabilité']}</p>
+                <div style="padding:20px; border-radius:10px; border-left: 10px solid {res['Color']}; background:rgba(0,0,0,0.05); margin:20px 0;">
+                    <h4 style="margin:0; opacity:0.8;">DÉTAILS DU {selected_date.upper()}</h4>
+                    <h2 style="margin:5px 0; color:{res['Color']};">{res['Label']} {res['Activité']}</h2>
+                    <p style="margin:0;">Pic : <b>{res['Score']}%</b> à <b>{res['Heure Opt.']}</b> | Fiabilité : {res['Fiabilité']}</p>
                 </div>
             """, unsafe_allow_html=True)
 
-            # CORRECTION : Utilisation de tonight_curve (nom défini à la ligne 128)
-            if tonight_curve:
-                st.write("**Évolution des conditions météo et probabilité de migration durant la prochaine nuit**")
-                c_df = pd.DataFrame(tonight_curve)
+            # Création du graphique Plotly
+            from plotly.subplots import make_subplots
+            import plotly.graph_objects as go
 
-                # Création du graphique avec deux axes Y
-                from plotly.subplots import make_subplots
-                import plotly.graph_objects as go
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            fig.add_trace(go.Scatter(x=c_df['Heure'], y=c_df['Probabilité'], fill='tozeroy', name="Probabilité (%)", 
+                                     line=dict(width=0), fillcolor=res['Color'], opacity=0.3), secondary_y=False)
+            fig.add_trace(go.Bar(x=c_df['Heure'], y=c_df['Pluie'], name="Pluie (mm)", marker_color='#3498DB', opacity=0.7), secondary_y=False)
+            fig.add_trace(go.Scatter(x=c_df['Heure'], y=c_df['Temp'], name="Temp. (°C)", line=dict(color='#E74C3C', width=3)), secondary_y=True)
 
-                fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-                # 1. Probabilité de migration (Area)
-                fig.add_trace(
-                    go.Scatter(x=c_df['Heure'], y=c_df['Probabilité'], fill='tozeroy', 
-                               name="Probabilité (%)", line=dict(width=0), 
-                               fillcolor=tonight_res['Color'], opacity=0.2),
-                    secondary_y=False,
-                )
-
-                # Récupération des données météo correspondantes pour le graphique
-                # On complète c_df avec les colonnes Temp et Pluie de night_df pour ce jour précis
-                start_night_now = datetime.combine(now_dt, datetime.min.time()) + timedelta(hours=20)
-                night_now_df = df[(df['time'] >= start_night_now) & (df['time'] <= start_night_now + timedelta(hours=10))].copy()
-                c_df['Temp'] = night_now_df['apparent_temperature'].values
-                c_df['Pluie'] = night_now_df['precipitation'].values
-
-                # 2. Précipitations (Barres - Bleu)
-                fig.add_trace(
-                    go.Bar(x=c_df['Heure'], y=c_df['Pluie'], name="Pluie (mm)", 
-                           marker_color='#3498DB', opacity=0.7),
-                    secondary_y=False,
-                )
-
-                # 3. Température (Ligne - Rouge)
-                fig.add_trace(
-                    go.Scatter(x=c_df['Heure'], y=c_df['Temp'], name="Temp. (°C)", 
-                               line=dict(color='#E74C3C', width=3)),
-                    secondary_y=True,
-                )
-
-                # Configuration des axes
-                fig.update_yaxes(
-                    title_text="<b>Probabilité / Pluie (mm)</b>", 
-                    title_font=dict(color="#3498DB"),
-                    tickfont=dict(color="#3498DB"),
-                    secondary_y=False, 
-                    range=[0, 100],
-                    showgrid=True, gridcolor='rgba(200,200,200,0.1)'
-                )
-
-                temp_min = min(c_df['Temp'].min() - 2, 0)
-                temp_max = max(c_df['Temp'].max() + 2, 12)
-                fig.update_yaxes(
-                    title_text="<b>Température (°C)</b>", 
-                    title_font=dict(color="#E74C3C"),
-                    tickfont=dict(color="#E74C3C"),
-                    secondary_y=True, 
-                    range=[temp_min, temp_max],
-                    showgrid=False
-                )
-
-                fig.update_layout(
-                    height=280, 
-                    margin=dict(l=0, r=0, b=0, t=10),
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                    hovermode="x unified",
-                    xaxis=dict(tickformat="%H:%M")
-                )
-
-                st.plotly_chart(fig, use_container_width=True)
-
-        # --- TABLEAU DES PRÉVISIONS ---
-        st.subheader("📅 Prévisions à 7 jours")
-        table_df = pd.DataFrame(daily_summary).drop(columns=['dt_obj', 'Label', 'Score', 'Color', 'Heure Opt.'])
-        table_df = table_df[["Date", "Pluie (12h-20h)", "T° ress. (18h-22h)", "Lune", "Probab.", "Fiabilité", "Activité"]]
-        st.table(table_df.set_index('Date'))
+            fig.update_layout(height=300, margin=dict(l=0, r=0, b=0, t=10), hovermode="x unified",
+                              legend=dict(orientation="h", y=1.1), xaxis=dict(tickformat="%H:%M"))
+            fig.update_yaxes(range=[0, 100], secondary_y=False)
+            
+            st.plotly_chart(fig, use_container_width=True)
 
         # --- NOTE SCIENTIFIQUE (DÉPLACÉE À L'INTÉRIEUR DU TRY) ---
         st.divider()

@@ -181,19 +181,29 @@ try:
                 "Heure Opt.": best['Heure'].strftime("%H:00")
             })
 
-        # --- AFFICHAGE DU TABLEAU INTERACTIF ---
-        st.subheader("📅 Prévisions à 7 jours")
-        st.info("💡 Cliquez sur une ligne pour visualiser le détail horaire de la nuit.")
-        
-        table_df = pd.DataFrame(daily_summary)
-        
-        # Configuration de la sélection
-        selection = st.dataframe(
-            table_df[["Date", "Lune", "Probab.", "Activité", "Fiabilité"]],
-            use_container_width=True,
-            hide_index=True,
-            on_select="rerun",
-            selection_mode="single"
+# --- AFFICHAGE DU TABLEAU INTERACTIF ---
+st.subheader("📅 Prévisions à 7 jours")
+st.info("💡 Cliquez sur une ligne pour visualiser le détail horaire de la nuit.")
+
+table_df = pd.DataFrame(daily_summary)
+
+# Configuration de la sélection corrigée
+selection = st.dataframe(
+    table_df[["Date", "Lune", "Probab.", "Activité", "Fiabilité"]],
+    use_container_width=True,
+    hide_index=True,
+    on_select="rerun",
+    selection_mode="single-row"  # <--- Le terme exact est ici
+)
+
+# Récupération de l'index sélectionné
+selected_date = None
+if selection and selection.get("selection", {}).get("rows"):
+    selected_row_idx = selection["selection"]["rows"][0]
+    selected_date = table_df.iloc[selected_row_idx]["Date"]
+else:
+    # Par défaut, on affiche la première ligne du tableau (souvent aujourd'hui)
+    selected_date = table_df.iloc[0]["Date"]
         )
 
         # Déterminer quelle date afficher (sélectionnée ou aujourd'hui)

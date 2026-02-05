@@ -202,7 +202,7 @@ try:
 
             # CORRECTION : Utilisation de tonight_curve (nom défini à la ligne 128)
             if tonight_curve:
-                st.write("**Évolution des conditions météo et probabilité de migration**")
+                st.write("**Évolution des conditions météo et probabilité de migration durant la prochaine nuit**")
                 c_df = pd.DataFrame(tonight_curve)
 
                 # Création du graphique avec deux axes Y
@@ -283,10 +283,10 @@ try:
             st.markdown("""
             L'activité migratoire des amphibiens est un phénomène multi-factoriel. Ce radar utilise une approche basée sur la synergie entre les seuils physiologiques et les déclencheurs environnementaux.
             ### Paramètrage
-            * **Seuils :** En deçà de **4°C**, le métabolisme ralentit. Le modèle réduit drastiquement toute prévision d'activité sous ce seuil, de même que si les conditions deviennent soudainement plus sèches après une pluie.
-            * **Inertie  :** Le modèle s'appuie en partie sur la température moyenne et la pluviométrie des 8 dernières heures.
-            * **Synergie  :** Le modèle utilise une fonction multiplicative : le score thermique est plafonné par l'humidité. Un sol sec réduit la probabilité, même par grande douceur.
-            * **Influence lunaire :** Agit comme un synchronisateur. Les pics sont souvent observés aux abords de la pleine lune.
+            * **Seuils :** En deçà de 4°C, le métabolisme ralentit. Le modèle réduit drastiquement toute prévision d'activité sous ce seuil, de même que si les conditions deviennent soudainement plus sèches après une pluie.
+            * **Démarrage de la migration et inertie  :** Le modèle s'appuie en partie sur la température moyenne et la pluviométrie des 8 dernières heures (humidité du sol et température de "démarrage").
+            * **Maintien de la migration  :** Fonction multiplicative : les scores thermiques et d'humidité horaire durant la nuit maintient ou stoppe la migration. Une migration peut être stoppée par une chute brutale des températures ressenties (avec prise en compte du vent).
+            * **Influence lunaire :** Facteur de facilitation : les pics migratoires sont souvent observés autour de la pleine lune.
 
             ### Références
             * **Reading, C. J. (1998).** The effect of winter temperatures on the timing of breeding activity in the common toad Bufo bufo. *Oecologia*, 117, 469-475. [Lien](https://doi.org/10.1007/s004420050682)
@@ -297,8 +297,8 @@ try:
             * **Grant, R., Jarvis, L., & Sengupta, A. (2021).** Lunar phase as a cue for migrations to two species of explosive breeding amphibians (*Bufo bufo* and *Rana temporaria*)—implications for conservation. *European Journal of Wildlife Research*, 67, 11. [Lien](https://doi.org/10.1007/s10344-020-01453-3)
             
             ### Ressources
-            * Info Fauna karch. *Base de données sur les voies de migration en Suisse (ZSDB)*. [https://lepus.infofauna.ch/zsdb](https://lepus.infofauna.ch/zsdb)
-            * Conflits liés au trafic. [https://map.geo.admin.ch](https://s.geo.admin.ch/cwvc8ynhjv0j)
+            * **Base de données sur les voies de migration en Suisse (ZSDB)**. [https://lepus.infofauna.ch/zsdb](https://lepus.infofauna.ch/zsdb)
+            * **Points de conflits liés au trafic.** [https://map.geo.admin.ch](https://s.geo.admin.ch/cwvc8ynhjv0j)
             """)
 
 except Exception as e:

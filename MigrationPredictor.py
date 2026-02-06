@@ -6,7 +6,7 @@ import plotly.express as px
 from datetime import datetime, timedelta
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Radar Migration Amphibiens", page_icon="🐸", layout="centered")
+st.set_page_config(page_title="Radar Migration Amphibiens (version développement)", page_icon="🐸", layout="centered")
 
 # --- TRADUCTION DES DATES EN FRANÇAIS ---
 DAYS_FR = {

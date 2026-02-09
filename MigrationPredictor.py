@@ -8,6 +8,14 @@ from datetime import datetime, timedelta
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Radar Migration Amphibiens (version développement)", page_icon="🐸", layout="centered")
 
+hide_streamlit_style = """
+<style>
+footer {visibility: hidden;}
+</style>
+"""
+
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 # --- TRADUCTION DES DATES EN FRANÇAIS ---
 DAYS_FR = {
     0: "Lundi", 1: "Mardi", 2: "Mercredi", 3: "Jeudi", 

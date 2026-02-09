@@ -8,13 +8,28 @@ from datetime import datetime, timedelta
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Radar Migration Amphibiens (version développement)", page_icon="🐸", layout="centered")
 
-hide_streamlit_style = """
-<style>
-footer {visibility: hidden;}
-</style>
-"""
+st.markdown(
+    """
+    <style>
+    /* 1) Footer “classique” (selon versions) */
+    footer {visibility: hidden;}
+    [data-testid="stFooter"] {display: none;}
 
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+    /* 2) Barre “Built with Streamlit 🎈 / Fullscreen” (embed/viewer badge) */
+    .viewerBadge_container__1QSob,
+    .viewerBadge_container,
+    [data-testid="stAppViewerBadge"],
+    [data-testid="stToolbar"],
+    [data-testid="stStatusWidget"] {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 
 # --- TRADUCTION DES DATES EN FRANÇAIS ---
 DAYS_FR = {

@@ -228,34 +228,33 @@ try:
 
                 fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-                # 1. Probabilité de migration (Area)
-                fig.add_trace(
-                    go.Scatter(x=c_df['Heure'], y=c_df['Probabilité'], fill='tozeroy', 
-                               name="Probabilité (%)", line=dict(width=0), 
-                               fillcolor=tonight_res['Color'], opacity=0.2),
-                    secondary_y=False,
-                )
+# 1. Probabilité de migration (Area) - EN PREMIER (Arrière-plan)
+fig.add_trace(
+    go.Scatter(x=c_df['Heure'], y=c_df['Probabilité'], fill='tozeroy', 
+               name="Probabilité (%)", line=dict(width=0), 
+               fillcolor=tonight_res['Color'], opacity=0.2),
+    secondary_y=False,
+)
 
-                # Récupération des données météo correspondantes pour le graphique
-                # On complète c_df avec les colonnes Temp et Pluie de night_df pour ce jour précis
-                start_night_now = datetime.combine(now_dt, datetime.min.time()) + timedelta(hours=20)
-                night_now_df = df[(df['time'] >= start_night_now) & (df['time'] <= start_night_now + timedelta(hours=10))].copy()
-                c_df['Temp'] = night_now_df['apparent_temperature'].values
-                c_df['Pluie'] = night_now_df['precipitation'].values
+# Récupération des données météo correspondantes
+start_night_now = datetime.combine(now_dt, datetime.min.time()) + timedelta(hours=20)
+night_now_df = df[(df['time'] >= start_night_now) & (df['time'] <= start_night_now + timedelta(hours=10))].copy()
+c_df['Temp'] = night_now_df['apparent_temperature'].values
+c_df['Pluie'] = night_now_df['precipitation'].values
 
-                # 2. Précipitations (Barres - Bleu)
-                fig.add_trace(
-                    go.Bar(x=c_df['Heure'], y=c_df['Pluie'], name="Pluie (mm)", 
-                           marker_color='#3498DB', opacity=0.7),
-                    secondary_y=False,
-                )
+# 2. Précipitations (Barres - Bleu) - APRÈS LA PROBABILITÉ (Devant)
+fig.add_trace(
+    go.Bar(x=c_df['Heure'], y=c_df['Pluie'], name="Pluie (mm)", 
+           marker_color='#3498DB', opacity=0.7),
+    secondary_y=False,
+)
 
-                # 3. Température (Ligne - Rouge)
-                fig.add_trace(
-                    go.Scatter(x=c_df['Heure'], y=c_df['Temp'], name="Temp. (°C)", 
-                               line=dict(color='#E74C3C', width=3)),
-                    secondary_y=True,
-                )
+# 3. Température (Ligne - Rouge) - EN DERNIER (Premier plan)
+fig.add_trace(
+    go.Scatter(x=c_df['Heure'], y=c_df['Temp'], name="Temp. (°C)", 
+               line=dict(color='#E74C3C', width=3)),
+    secondary_y=True,
+)
 
                 # Configuration des axes
                 fig.update_yaxes(

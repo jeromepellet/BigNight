@@ -6,7 +6,7 @@ import plotly.express as px
 from datetime import datetime, timedelta
 
 # --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Radar Migration Amphibiens (version développement)", page_icon="🐸", layout="centered")
+st.set_page_config(page_title="Radar de migration des amphibiens", page_icon="🐸", layout="centered")
 
 st.markdown("""
 <style>
@@ -130,8 +130,8 @@ def fetch_weather(lat, lon):
 
 # --- 4. INTERFACE ---
 
-st.title("Radar des migrations (version développement)")
-st.caption("Modèle prédictif des migrations d'amphibiens en Suisse | MétéoSuisse (ICON-CH)")
+st.title("Radar des migrations d'amphibiens ")
+st.caption("Modèle prédictif des migrations d'amphibiens en Suisse <br>(Version en développement) <br>Données MétéoSuisse (ICON-CH)")
 
 ville = st.selectbox("📍 Sélectionner une station météo :", list(CITY_DATA.keys()), index=10)
 LAT, LON = CITY_DATA[ville]

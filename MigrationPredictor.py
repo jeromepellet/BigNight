@@ -131,8 +131,7 @@ def fetch_weather(lat, lon):
 # --- 4. INTERFACE ---
 
 st.title("Radar des migrations d'amphibiens ")
-st.markdown("""
-### Modèle prédictif des migrations d'amphibiens en Suisse  
+st.markdown("""  
 *(Version en développement)* **Données MétéoSuisse (ICON-CH)**
 """)
 
@@ -300,7 +299,7 @@ try:
             st.markdown("""
             L'activité migratoire des amphibiens est un phénomène multi-factoriel. Ce radar utilise une approche basée sur la synergie entre les seuils physiologiques et les déclencheurs environnementaux.
             ### Paramètrage
-            * **Seuils :** En deçà de **4°C**, le métabolisme ralentit. Le modèle réduit drastiquement toute prévision d'activité sous ce seuil, de même que si les conditions deviennent soudainement plus sèches après une pluie.
+            * **Seuils :** En deçà de 4°C, le métabolisme ralentit. Le modèle réduit drastiquement toute prévision d'activité sous ce seuil, de même que si les conditions deviennent soudainement plus sèches après une pluie.
             * **Inertie  :** Le modèle s'appuie en partie sur la température moyenne et la pluviométrie des 8 dernières heures.
             * **Synergie  :** Le modèle utilise une fonction multiplicative : le score thermique est plafonné par l'humidité. Un sol sec réduit la probabilité, même par grande douceur.
             * **Influence lunaire :** Agit comme un synchronisateur. Les pics sont souvent observés aux abords de la pleine lune.

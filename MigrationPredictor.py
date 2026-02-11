@@ -132,7 +132,7 @@ def fetch_weather(lat, lon):
 
 st.title("Radar des migrations d'amphibiens ")
 st.markdown("""  
-Modèle prédictif d'activité migratrice (version en développement) 
+Modèle prédictif d'activité migratrice (version en développement)  
 Prévisions MétéoSuisse (ICON-CH)
 """)
 

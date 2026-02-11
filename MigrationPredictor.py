@@ -132,8 +132,8 @@ def fetch_weather(lat, lon):
 
 st.title("Radar des migrations d'amphibiens ")
 st.markdown("""  
-Modèle prédictif d'activité migratrice (version en développement)  
-Prévisions MétéoSuisse (ICON-CH)
+*Modèle prédictif d'activité migratrice (version en développement)* 
+**Données MétéoSuisse (ICON-CH)**
 """)
 
 ville = st.selectbox("📍 Sélectionner une station météo :", list(CITY_DATA.keys()), index=10)
@@ -217,16 +217,18 @@ try:
                 </div>
             """, unsafe_allow_html=True)
 
+            # CORRECTION : Utilisation de tonight_curve (nom défini à la ligne 128)
             if tonight_curve:
                 st.write("**Évolution des conditions météo et probabilité de migration**")
                 c_df = pd.DataFrame(tonight_curve)
-                
+
+                # Création du graphique avec deux axes Y
                 from plotly.subplots import make_subplots
                 import plotly.graph_objects as go
 
                 fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-                # 1. Probabilité (Fond - Opacité 0.2)
+                # 1. Probabilité de migration (Area)
                 fig.add_trace(
                     go.Scatter(x=c_df['Heure'], y=c_df['Probabilité'], fill='tozeroy', 
                                name="Probabilité (%)", line=dict(width=0), 
@@ -234,32 +236,57 @@ try:
                     secondary_y=False,
                 )
 
-                # --- AJOUT DES DONNÉES MÉTÉO ---
+                # Récupération des données météo correspondantes pour le graphique
+                # On complète c_df avec les colonnes Temp et Pluie de night_df pour ce jour précis
                 start_night_now = datetime.combine(now_dt, datetime.min.time()) + timedelta(hours=20)
                 night_now_df = df[(df['time'] >= start_night_now) & (df['time'] <= start_night_now + timedelta(hours=10))].copy()
                 c_df['Temp'] = night_now_df['apparent_temperature'].values
                 c_df['Pluie'] = night_now_df['precipitation'].values
 
-                # 2. Pluie (Devant - Opacité 0.7)
+                # 2. Précipitations (Barres - Bleu)
                 fig.add_trace(
                     go.Bar(x=c_df['Heure'], y=c_df['Pluie'], name="Pluie (mm)", 
                            marker_color='#3498DB', opacity=0.7),
                     secondary_y=False,
                 )
 
-                # 3. Température (Tout devant)
+                # 3. Température (Ligne - Rouge)
                 fig.add_trace(
                     go.Scatter(x=c_df['Heure'], y=c_df['Temp'], name="Temp. (°C)", 
                                line=dict(color='#E74C3C', width=3)),
                     secondary_y=True,
                 )
 
-                # (Ici vous gardez vos fig.update_layout et st.plotly_chart...)
-                st.plotly_chart(fig, use_container_width=True)
+                # Configuration des axes
+                fig.update_yaxes(
+                    title_text="<b>Probabilité / Pluie (mm)</b>", 
+                    title_font=dict(color="#3498DB"),
+                    tickfont=dict(color="#3498DB"),
+                    secondary_y=False, 
+                    range=[0, 100],
+                    showgrid=True, gridcolor='rgba(200,200,200,0.1)'
+                )
 
-# --- BLOC OBLIGATOIRE POUR FERMER LE TRY (Ligne 121) ---
-except Exception as e:
-    st.error(f"Erreur : {e}")
+                temp_min = min(c_df['Temp'].min() - 2, 0)
+                temp_max = max(c_df['Temp'].max() + 2, 12)
+                fig.update_yaxes(
+                    title_text="<b>Température (°C)</b>", 
+                    title_font=dict(color="#E74C3C"),
+                    tickfont=dict(color="#E74C3C"),
+                    secondary_y=True, 
+                    range=[temp_min, temp_max],
+                    showgrid=False
+                )
+
+                fig.update_layout(
+                    height=280, 
+                    margin=dict(l=0, r=0, b=0, t=10),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    hovermode="x unified",
+                    xaxis=dict(tickformat="%H:%M")
+                )
+
+                st.plotly_chart(fig, use_container_width=True)
 
         # --- TABLEAU DES PRÉVISIONS ---
         st.subheader("📅 Prévisions à 7 jours")

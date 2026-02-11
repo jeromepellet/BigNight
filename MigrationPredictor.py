@@ -132,8 +132,9 @@ def fetch_weather(lat, lon):
 
 st.title("Radar des migrations d'amphibiens ")
 st.markdown("""  
-*Modèle prédictif d'activité migratrice (version en développement)* 
-**Données MétéoSuisse (ICON-CH)**
+*Modèle prédictif d'activité migratrice (version en développement)*
+
+*Données MétéoSuisse (ICON-CH)*
 """)
 
 ville = st.selectbox("📍 Sélectionner une station météo :", list(CITY_DATA.keys()), index=10)
